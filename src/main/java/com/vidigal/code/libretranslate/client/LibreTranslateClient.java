@@ -15,6 +15,7 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
 
 /**
  * Client implementation for the LibreTranslate API providing text translation services.
@@ -718,9 +719,9 @@ public class LibreTranslateClient extends AbstractTranslatorClient implements Tr
             } else {
                 result.append("&");
             }
-            result.append(URLEncoder.encode(entry.getKey(), StandardCharsets.UTF_8));
+            result.append(URLEncoder.encode(entry.getKey()));
             result.append("=");
-            result.append(URLEncoder.encode(entry.getValue(), StandardCharsets.UTF_8));
+            result.append(URLEncoder.encode(entry.getValue()));
         }
 
         return result.toString();
@@ -766,12 +767,13 @@ public class LibreTranslateClient extends AbstractTranslatorClient implements Tr
     /**
      * Processes a list of translation commands and returns the results.
      *
-     * @param commands The list of commands to process
-     * @param log      Whether to log the results
-     * @return A list of results corresponding to each command
+     * @param commands The list of commands to process.
+     * @param log      Whether to log the results.
+     * @return A list of results corresponding to each command.
      */
     @Override
     public List<String> processCommands(List<String> commands, boolean log) {
+        // Use parallelStream if concurrency is required, otherwise use stream() for sequential processing
         return Collections.singletonList(String.join("\n", commands.parallelStream()
                 .map(command -> {
                     try {
@@ -781,7 +783,7 @@ public class LibreTranslateClient extends AbstractTranslatorClient implements Tr
                         return "Error: " + e.getMessage();
                     }
                 })
-                .toList()));
+                .collect(Collectors.toList())));
     }
 
     /**

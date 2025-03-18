@@ -94,8 +94,7 @@ public abstract class AbstractTranslatorClient {
      * reducing the number of unnecessary external API calls.
      **/
 
-    protected final Map<String, CacheEntry> translationCache = new LinkedHashMap<>(100, 0.75f, true) {
-        @Override
+    protected final Map<String, CacheEntry> translationCache = new LinkedHashMap<String, CacheEntry>(100, 0.75f, true) {
         protected boolean removeEldestEntry(Map.Entry<String, CacheEntry> eldest) {
             return size() > 1000; // Limit of 1000 entries
         }
