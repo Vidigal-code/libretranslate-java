@@ -29,6 +29,7 @@ public class TranslatorServiceTest extends AbstractTranslatorClient {
     // Mocking TranslatorService
     private TranslatorService translatorService;
 
+
     /**
      * Setup method to initialize necessary components before each test.
      * Verifies the API connection before proceeding with any test.
@@ -99,7 +100,7 @@ public class TranslatorServiceTest extends AbstractTranslatorClient {
         LibreTranslateConfig config = new LibreTranslateConfig.Builder()
                 .apiUrl(API)               // Set the API URL
                 .apiKey(KEY)              // Set the API Key
-                .rateLimitCooldown(1000)   // Rate limit cooldown, 100 and 60000
+                .rateLimitCooldown(1000)   // Rate limit cooldown, 1000 and 60000
                 .connectionTimeout(10000) // Connection timeout in milliseconds
                 .socketTimeout(15000)     // Socket timeout in milliseconds
                 .maxRetries(5)            // Maximum number of retries for failed requests
@@ -146,6 +147,7 @@ public class TranslatorServiceTest extends AbstractTranslatorClient {
                 .maxRequestsPerSecond(2)
                 .rateLimitCooldown(2000) // Use valid value within 100-60000
                 .build();
+
 
         TranslatorService service = new LibreTranslateClient(config);
 
