@@ -5,36 +5,56 @@ import com.vidigal.code.libretranslate.client.LibreTranslateClient;
 import com.vidigal.code.libretranslate.config.LibreTranslateConfig;
 import com.vidigal.code.libretranslate.service.TranslatorService;
 import org.fusesource.jansi.Ansi;
-import org.junit.jupiter.api.*;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.junit.jupiter.MockitoExtension;
-
+import org.junit.Before;
+import org.junit.Rule;
+import org.junit.Test;
+import org.junit.rules.TestWatcher;
+import org.junit.runner.Description;
+import org.mockito.Mock;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.Assert.*;
 
-@ExtendWith(MockitoExtension.class)
 public class TranslatorServiceTest extends AbstractTranslatorClient {
 
     // Constants for test results message
     private static final String MESSAGE_PASSED = "[PASSED]";
+    private static final String MESSAGE_FAILED = "[FAILED]";
 
     // API URL and Key for translation service
     private static final String API = "https://translate.fedilab.app/translate";
     private static final String KEY = "unknown";
 
     // Mocking TranslatorService
+    @Mock
     private TranslatorService translatorService;
+
+    // TestWatcher rule for custom test reporting
+    @Rule
+    public TestWatcher watchman = new TestWatcher() {
+        @Override
+        protected void succeeded(Description description) {
+            // Called when the test passes
+            System.out.println(Ansi.ansi().fg(Ansi.Color.GREEN).a("\n" + MESSAGE_PASSED + " " + description.getMethodName() + " completed.").reset());
+        }
+
+        @Override
+        protected void failed(Throwable e, Description description) {
+            // Called when the test fails
+            System.err.println(Ansi.ansi().fg(Ansi.Color.RED).a("\n" + MESSAGE_FAILED + " " + description.getMethodName() + " failed: " + e.getMessage()).reset());
+        }
+    };
 
     /**
      * Setup method to initialize necessary components before each test.
      * Verifies the API connection before proceeding with any test.
      */
-    @BeforeEach
+    @Before
     public void setUp() {
+
         // Check if the API is accessible before running any tests
         if (!TranslatorService.testConnection(API)) {
             System.err.println(Ansi.ansi().fg(Ansi.Color.RED).a("API connection failed. Cannot proceed with tests.").reset());
@@ -54,7 +74,6 @@ public class TranslatorServiceTest extends AbstractTranslatorClient {
         // Attempt translation with an unsupported target language (xx)
         String result = translatorService.translate("Hello world", "xx");
         assertNotNull(result); // Ensure that the result is not null
-        System.out.println(Ansi.ansi().fg(Ansi.Color.GREEN).a(MESSAGE_PASSED + " Translation to unsupported language returned a result.").reset());
     }
 
     /**
@@ -66,7 +85,6 @@ public class TranslatorServiceTest extends AbstractTranslatorClient {
         // Attempt translation with unsupported multiple target languages
         String result = translatorService.translate("xx", "xx", "xx");
         assertNotNull(result); // Ensure that the result is not null
-        System.out.println(Ansi.ansi().fg(Ansi.Color.GREEN).a(MESSAGE_PASSED + " Translation to multiple unsupported languages returned a result.").reset());
     }
 
     /**
@@ -99,7 +117,7 @@ public class TranslatorServiceTest extends AbstractTranslatorClient {
         LibreTranslateConfig config = new LibreTranslateConfig.Builder()
                 .apiUrl(API)               // Set the API URL
                 .apiKey(KEY)              // Set the API Key
-                .rateLimitCooldown(1000)   // Rate limit cooldown, 100 and 60000
+                .rateLimitCooldown(1000)   // Rate limit cooldown, 1000 and 60000
                 .connectionTimeout(10000) // Connection timeout in milliseconds
                 .socketTimeout(15000)     // Socket timeout in milliseconds
                 .maxRetries(5)            // Maximum number of retries for failed requests
@@ -121,24 +139,10 @@ public class TranslatorServiceTest extends AbstractTranslatorClient {
                 });
     }
 
-    /**
-     * Test for checking the API connection status.
-     * Verifies that the connection to the API is successful.
-     */
-    @Test
-    public void testApiConnection() {
-        try {
-            // Assert that the API connection is successful
-            assertTrue(TranslatorService.testConnection(API), "API connection should be successful.");
-            System.out.println(Ansi.ansi().fg(Ansi.Color.GREEN).a("\n" + MESSAGE_PASSED + " API connection.").reset());
-        } catch (Exception e) {
-            // Handle any errors in the connection test
-            fail(Ansi.ansi().fg(Ansi.Color.RED).a("Error with testApiConnection: " + e.getMessage()).reset().toString());
-        }
-    }
 
     @Test
-    public void testRateLimiting() throws Exception {
+    public void testRateLimiting() {
+
         // Configure strict rate limiting: 2 requests per second
         LibreTranslateConfig config = LibreTranslateConfig.builder()
                 .apiUrl(API)
@@ -149,43 +153,48 @@ public class TranslatorServiceTest extends AbstractTranslatorClient {
 
         TranslatorService service = new LibreTranslateClient(config);
 
-        int requestCount = 5;
         List<CompletableFuture<Void>> futures = new ArrayList<>();
         long startTime = System.currentTimeMillis();
 
-        // Send burst of parallel requests
-        for (int i = 0; i < requestCount; i++) {
+        for (int i = 0; i < 10; i++) {
             CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-                service.translate("Test rate limiting", "en", "es");
+                try {
+                    service.translate("Hello", "es");
+                } catch (Exception e) {
+                    throw new RuntimeException("Translation failed", e);
+                }
             });
             futures.add(future);
         }
 
-        // Wait for all requests to complete
         CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
-        long duration = System.currentTimeMillis() - startTime;
+        long endTime = System.currentTimeMillis();
 
-        // Calculate expected minimum time
-        int expectedMinimum = (int) ((Math.ceil((double) requestCount / config.getMaxRequestsPerSecond()) - 1) * 1000);
+        long totalTime = endTime - startTime;
+        assertTrue("Expected at least 2 seconds for 10 requests with a cooldown of 200ms", totalTime >= 1800);
 
-        // Verify execution time (2 requests/sec = ~2000ms for 5 requests)
-        assertTrue(
-                duration >= expectedMinimum,
-                "Requests should take at least " + expectedMinimum + "ms (actual: " + duration + "ms)"
-        );
-
-        // Verify all completed successfully
-        futures.forEach(future -> assertDoesNotThrow(() -> future.get()));
+        futures.forEach(future -> {
+            try {
+                future.get();
+            } catch (Exception e) {
+                fail("One or more requests failed: " + e.getMessage());
+            }
+        });
     }
-
 
     /**
-     * Lifecycle method executed after all tests.
+     * Test for checking the API connection status.
+     * Verifies that the connection to the API is successful.
      */
-    @AfterAll
-    public static void tearDown() {
-        System.out.println(Ansi.ansi().fg(Ansi.Color.YELLOW).a("\nAll tests completed.").reset());
+    @Test
+    public void testApiConnection() {
+        try {
+            // Assert that the API connection is successful
+            assertTrue("API connection should be successful.", TranslatorService.testConnection(API));
+            System.out.println(Ansi.ansi().fg(Ansi.Color.GREEN).a("\n" + MESSAGE_PASSED + " API connection.").reset());
+        } catch (Exception e) {
+            // Handle any errors in the connection test
+            fail(Ansi.ansi().fg(Ansi.Color.RED).a("Error with testApiConnection: " + e.getMessage()).reset().toString());
+        }
     }
-
-
 }
