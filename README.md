@@ -11,6 +11,20 @@ Java client for the LibreTranslate API featuring advanced capabilities like rate
 - **AutoCloseable Support** for automatic resource management
 - **Batch Command Processing** with multiple operation modes
 
+
+## EXAMPLE
+
+**Test - 1**
+
+
+![GIF](https://github.com/Vidigal-code/libretranslate-java/blob/main/example/example-1.png?raw=true)
+
+
+**Test - 2**
+
+![GIF](https://github.com/Vidigal-code/libretranslate-java/blob/main/example/example-2.png?raw=true)
+
+
 ## Installation
 
 ### Maven
