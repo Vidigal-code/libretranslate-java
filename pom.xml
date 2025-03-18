@@ -4,7 +4,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.vidigal.code</groupId>
-    <artifactId>libretranslate-java</artifactId>
+    <artifactId>libretranslate-java-JDK20</artifactId>
     <version>1.0.0</version>
     <packaging>jar</packaging>
 
@@ -36,9 +36,9 @@
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
-        <java.version>17</java.version>
+        <maven.compiler.source>20</maven.compiler.source>
+        <maven.compiler.target>20</maven.compiler.target>
+        <java.version>20</java.version>
 
         <!-- Dependency versions -->
         <httpclient.version>5.2</httpclient.version>
