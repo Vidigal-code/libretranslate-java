@@ -1,6 +1,6 @@
 # LibreTranslate Java Client
 
-Java client for the LibreTranslate API featuring advanced capabilities like rate limiting, caching, and comprehensive monitoring.
+Java client for the LibreTranslate API featuring advanced capabilities like rate limiting, caching, and comprehensive monitoring. JDK-17
 
 ## Key Features
 
