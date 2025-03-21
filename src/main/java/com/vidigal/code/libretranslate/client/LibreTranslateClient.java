@@ -24,7 +24,7 @@ import java.util.stream.Collectors;
  * <p>This client implements the {@link TranslatorService} interface and manages resources
  * automatically when used with try-with-resources (implements {@link AutoCloseable}).</p>
  *
- * @author Refactored version
+ * @author Refactored version Kauan Vidigal
  */
 public class LibreTranslateClient extends AbstractTranslatorClient implements TranslatorService, AutoCloseable {
 
