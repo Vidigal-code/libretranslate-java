@@ -5,7 +5,6 @@ package com.vidigal.code.libretranslate.exception;
  */
 public class TranslationException extends RuntimeException {
 
-    private static final long serialVersionUID = 1L;
 
     /**
      * Creates a new TranslationException with the specified message.
