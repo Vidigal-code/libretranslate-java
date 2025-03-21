@@ -2,6 +2,8 @@
 
 Java client for the LibreTranslate API featuring advanced capabilities like rate limiting, caching, and comprehensive monitoring. JDK-17
 
+version-simple: https://github.com/Vidigal-code/libretranslate-simple-java
+
 ## Key Features
 
 - **Synchronous & Asynchronous Translation**
