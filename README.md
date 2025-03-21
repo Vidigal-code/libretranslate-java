@@ -18,7 +18,7 @@ Java client for the LibreTranslate API featuring advanced capabilities like rate
 ```xml
 <dependency>
     <groupId>com.vidigal.code</groupId>
-    <artifactId>libretranslate-java-client</artifactId>
+    <artifactId>libretranslate-java</artifactId>
     <version>1.0.0</version>
 </dependency>
 ```
