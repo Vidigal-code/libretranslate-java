@@ -10,6 +10,8 @@ import java.io.IOException;
 import java.util.Collections;
 import java.util.Map;
 
+import com.vidigal.code.libretranslate.exception.TranslationException;
+
 /**
  * Utility class providing JSON parsing and serialization operations with enhanced validation.
  */

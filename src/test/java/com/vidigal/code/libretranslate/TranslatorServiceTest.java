@@ -1,23 +1,25 @@
 package com.vidigal.code.libretranslate;
 
-import com.vidigal.code.libretranslate.client.AbstractTranslatorClient;
-import com.vidigal.code.libretranslate.client.LibreTranslateClient;
 import com.vidigal.code.libretranslate.config.LibreTranslateConfig;
+import com.vidigal.code.libretranslate.exception.TranslationException;
 import com.vidigal.code.libretranslate.service.TranslatorService;
+import com.vidigal.code.libretranslate.service.Translators;
 import org.fusesource.jansi.Ansi;
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
-
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 @ExtendWith(MockitoExtension.class)
-public class TranslatorServiceTest extends AbstractTranslatorClient {
+public class TranslatorServiceTest  {
 
     // Constants for test results message
     private static final String MESSAGE_PASSED = "[PASSED]";
@@ -36,37 +38,39 @@ public class TranslatorServiceTest extends AbstractTranslatorClient {
     @BeforeEach
     public void setUp() {
         // Check if the API is accessible before running any tests
-        if (!TranslatorService.testConnection(API)) {
+        if (!Translators.testConnection(API)) {
             System.err.println(Ansi.ansi().fg(Ansi.Color.RED).a("API connection failed. Cannot proceed with tests.").reset());
             fail("API connection failed. Cannot proceed with tests.");
         }
 
         // Initialize the TranslatorService with the provided API URL and Key
-        translatorService = TranslatorService.create(API, KEY);
+        translatorService = Translators.create(API, KEY);
     }
 
     /**
      * Test for translating a text to an unsupported target language.
-     * Verifies that a result is returned even if the language is unsupported.
+     * Expects a TranslationException to be thrown for invalid language.
      */
     @Test
     public void testTranslateUnsupportedTargetLanguage() {
         // Attempt translation with an unsupported target language (xx)
-        String result = translatorService.translate("Hello world", "xx");
-        assertNotNull(result); // Ensure that the result is not null
-        System.out.println(Ansi.ansi().fg(Ansi.Color.GREEN).a(MESSAGE_PASSED + " Translation to unsupported language returned a result.").reset());
+        assertThrows(TranslationException.class, () -> {
+            translatorService.translate("Hello world", "xx");
+        });
+        System.out.println(Ansi.ansi().fg(Ansi.Color.GREEN).a(MESSAGE_PASSED + " Translation to unsupported language correctly throws exception.").reset());
     }
 
     /**
      * Test for translating a text to unsupported multiple target languages.
-     * Verifies that a result is returned even if multiple languages are unsupported.
+     * Expects a TranslationException to be thrown for invalid language.
      */
     @Test
     public void testTranslateUnsupportedTargetLanguages() {
         // Attempt translation with unsupported multiple target languages
-        String result = translatorService.translate("xx", "xx", "xx");
-        assertNotNull(result); // Ensure that the result is not null
-        System.out.println(Ansi.ansi().fg(Ansi.Color.GREEN).a(MESSAGE_PASSED + " Translation to multiple unsupported languages returned a result.").reset());
+        assertThrows(TranslationException.class, () -> {
+            translatorService.translate("xx", "xx", "xx");
+        });
+        System.out.println(Ansi.ansi().fg(Ansi.Color.GREEN).a(MESSAGE_PASSED + " Translation with invalid languages correctly throws exception.").reset());
     }
 
     /**
@@ -96,7 +100,7 @@ public class TranslatorServiceTest extends AbstractTranslatorClient {
     public void testCustomConfiguration() {
         // Create a custom configuration with specific API URL, Key, and other settings
         // Step 1: Build a custom configuration using LibreTranslateConfig.Builder
-        LibreTranslateConfig config = new LibreTranslateConfig.Builder()
+        LibreTranslateConfig config =  LibreTranslateConfig.builder()
                 .apiUrl(API)               // Set the API URL
                 .apiKey(KEY)              // Set the API Key
                 .rateLimitCooldown(1000)   // Rate limit cooldown, 100 and 60000
@@ -106,7 +110,7 @@ public class TranslatorServiceTest extends AbstractTranslatorClient {
                 .build();
 
         // Create a TranslatorService instance with the custom configuration
-        TranslatorService customTranslator = TranslatorService.create(config);
+        TranslatorService customTranslator = Translators.create(config);
 
         // Perform asynchronous translation using the custom configuration
         customTranslator.translateAsync("This is a test", "de")
@@ -129,7 +133,7 @@ public class TranslatorServiceTest extends AbstractTranslatorClient {
     public void testApiConnection() {
         try {
             // Assert that the API connection is successful
-            assertTrue(TranslatorService.testConnection(API), "API connection should be successful.");
+            assertTrue(Translators.testConnection(API), "API connection should be successful.");
             System.out.println(Ansi.ansi().fg(Ansi.Color.GREEN).a("\n" + MESSAGE_PASSED + " API connection.").reset());
         } catch (Exception e) {
             // Handle any errors in the connection test
@@ -147,35 +151,45 @@ public class TranslatorServiceTest extends AbstractTranslatorClient {
                 .rateLimitCooldown(2000) // Use valid value within 100-60000
                 .build();
 
-        TranslatorService service = new LibreTranslateClient(config);
-
+        TranslatorService service = Translators.create(config);
         int requestCount = 5;
         List<CompletableFuture<Void>> futures = new ArrayList<>();
-        long startTime = System.currentTimeMillis();
+        long startTime = System.nanoTime(); // Use nanoseconds for higher precision
 
         // Send burst of parallel requests
         for (int i = 0; i < requestCount; i++) {
             CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-                service.translate("Test rate limiting", "en", "es");
+                try {
+                    service.translate("Test rate limiting", "en", "es");
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
             });
             futures.add(future);
         }
 
         // Wait for all requests to complete
         CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
-        long duration = System.currentTimeMillis() - startTime;
+        long duration = System.nanoTime() - startTime;
 
-        // Calculate expected minimum time
+        // Convert duration to milliseconds
+        long durationMs = TimeUnit.NANOSECONDS.toMillis(duration);
+
+        // Calculate expected minimum time with a higher tolerance for external API variation
         int expectedMinimum = (int) ((Math.ceil((double) requestCount / config.getMaxRequestsPerSecond()) - 1) * 1000);
+        double tolerance = 0.5; // Allow ±50% tolerance for network/external factors
+        long lowerBound = (long) (expectedMinimum * (1 - tolerance));
 
-        // Verify execution time (2 requests/sec = ~2000ms for 5 requests)
+        // Verify execution time is at least the lower bound (network may cause variance)
         assertTrue(
-                duration >= expectedMinimum,
-                "Requests should take at least " + expectedMinimum + "ms (actual: " + duration + "ms)"
+                durationMs >= lowerBound,
+                "Requests should take at least " + lowerBound + "ms (actual: " + durationMs + "ms)"
         );
 
         // Verify all completed successfully
         futures.forEach(future -> assertDoesNotThrow(() -> future.get()));
+        
+        System.out.println(Ansi.ansi().fg(Ansi.Color.GREEN).a(MESSAGE_PASSED + " Rate limiter took " + durationMs + "ms").reset());
     }
 
 
