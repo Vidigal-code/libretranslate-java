@@ -25,19 +25,44 @@ public class TranslationExample {
     public static final String RESET = "\u001B[0m";  // Reset text color
 
     public static void main(String[] args) throws Exception {
-
-        /**
-         * Example 1: Basic Usage of TranslatorService
-         */
-
         // Create a TranslatorService instance with the API URL and API Key
         TranslatorService translator = Translators.create(API, KEY);
 
-        LibreTranslateConfig config = LibreTranslateConfig.builder().apiUrl(API).apiKey(KEY).build();
+        // Define a list of commands for batch processing
+        List<String> commands = Arrays.asList(
+                "m:s;t:Hello;en;pt", // Synchronous translation of "Hello" from English (en) to Portuguese (pt)
+                "t:World;pt",        // Translate "World" to Portuguese (pt)
+                "t:Hello;en;pt",     // Translate "Hello" en (English) to Portuguese (pt)
+                "m:as;t:Goodbye;en;es" // Asynchronous translation of "Goodbye" from English (en) to Spanish (es)
+        );
 
-        try (LibreTranslateClient client = new LibreTranslateClient(config)) {
-            String translated = client.translate("Hello", "en", "es");
-            System.out.println(translated); // Hola
-        }
+        // Process the commands and print the results
+        System.out.println(translator.processCommands(commands, false));
+
+        // Perform a simple synchronous translation
+        String result = translator.translate("Hello world", "pt");
+        System.out.println("Translated text: " + result);
+
+        // Perform a synchronous translation with a specified source language
+        String resultWithSource = translator.translate("Hello world", "en", "es");
+        System.out.println("Translated to Spanish: " + resultWithSource);
+
+        // Perform an asynchronous translation
+        CompletableFuture<String> translationFuture = translator.translateAsync("Hello world", "en", "fr");
+
+        // Handle the asynchronous result
+        translationFuture
+                .thenAccept(text -> {
+                    System.out.println("Translation: " + text);
+                })
+                .exceptionally(ex -> {
+                    System.err.println("Translation failed: " + ex.getMessage());
+                    return null;
+                });
+
+        // Wait for the asynchronous operation to complete
+        translationFuture.join();
+
+        translator.close();
     }
 }

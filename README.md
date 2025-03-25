@@ -28,6 +28,16 @@ com.vidigal.code.libretranslate
 └── util            - Common utility classes
 ```
 
+## Examples
+
+**Test - 1**
+
+![Example 1](https://github.com/Vidigal-code/libretranslate-java/blob/main/example/example-1.png?raw=true)
+
+**Test - 2**
+
+![Example 2](https://github.com/Vidigal-code/libretranslate-java/blob/main/example/example-2.png?raw=true)
+
 ## Quick Usage
 
 ### Basic Translation
@@ -106,11 +116,6 @@ results.forEach(System.out::println);
 ### Metrics Monitoring
 
 ```java
-// Enable detailed cache logging
-TranslationCache.DETAILED_LOGGING = true;
-// Enable detailed rate limiter logging
-RateLimiter.DETAILED_LOGGING = true;
-
 // Access metrics programmatically
 System.out.println("Cache Hits: " + translator.getCacheHits());
 System.out.println("Cache Misses: " + translator.getCacheMisses());
@@ -131,6 +136,110 @@ try {
 } catch (TranslationException e) {
     System.err.println("Translation failed: " + e.getMessage());
     // Handle specific error conditions
+}
+```
+
+## Complete Usage Examples
+
+### Example 1: Basic Usage of `TranslatorService`
+
+```java
+    public static void main(String[] args) throws Exception {
+    // Create a TranslatorService instance with the API URL and API Key
+    TranslatorService translator = Translators.create(API, KEY);
+
+    // Define a list of commands for batch processing
+    List<String> commands = Arrays.asList(
+            "m:s;t:Hello;en;pt", // Synchronous translation of "Hello" from English (en) to Portuguese (pt)
+            "t:World;pt",        // Translate "World" to Portuguese (pt)
+            "t:Hello;en;pt",     // Translate "Hello" en (English) to Portuguese (pt)
+            "m:as;t:Goodbye;en;es" // Asynchronous translation of "Goodbye" from English (en) to Spanish (es)
+    );
+
+    // Process the commands and print the results
+    System.out.println(translator.processCommands(commands, false));
+
+    // Perform a simple synchronous translation
+    String result = translator.translate("Hello world", "pt");
+    System.out.println("Translated text: " + result);
+
+    // Perform a synchronous translation with a specified source language
+    String resultWithSource = translator.translate("Hello world", "en", "es");
+    System.out.println("Translated to Spanish: " + resultWithSource);
+
+    // Perform an asynchronous translation
+    CompletableFuture<String> translationFuture = translator.translateAsync("Hello world", "en", "fr");
+
+    // Handle the asynchronous result
+    translationFuture
+            .thenAccept(text -> {
+                System.out.println("Translation: " + text);
+            })
+            .exceptionally(ex -> {
+                System.err.println("Translation failed: " + ex.getMessage());
+                return null;
+            });
+
+    // Wait for the asynchronous operation to complete
+    translationFuture.join();
+
+    translator.close();
+}
+```
+
+### Example 2: Advanced Usage with Custom Configuration
+
+```java
+    public static void main(String[] args) throws Exception {
+    // Step 1: Build a custom configuration using LibreTranslateConfig.Builder
+    LibreTranslateConfig config = LibreTranslateConfig.builder()
+            .apiUrl(API)               // Set the API URL
+            .apiKey(KEY)               // Set the API Key
+            .rateLimitCooldown(1000)   // Rate limit cooldown (100 and 60000)
+            .connectionTimeout(10000)  // Connection timeout in milliseconds
+            .socketTimeout(15000)      // Socket timeout in milliseconds
+            .maxRetries(5)             // Maximum number of retries for failed requests
+            .build();
+
+    // Step 2: Create a TranslatorService instance with the custom configuration
+    TranslatorService customTranslator = Translators.create(config);
+
+    // Step 3: Define a list of commands for batch processing
+    List<String> commandsCustom = Arrays.asList(
+            "m:s;t:Hello;en;pt", // Synchronous translation of "Hello" from English (en) to Portuguese (pt)
+            "t:World;pt",        // Translate "World" to Portuguese (pt)
+            "t:Hello;en;pt",     // Translate "Hello" en (English) to Portuguese (pt)
+            "m:as;t:Goodbye;en;es" // Asynchronous translation of "Goodbye" from English (en) to Spanish (es)
+    );
+
+    // Step 4: Process the commands and print the results
+    System.out.println("customTranslator: " + customTranslator.processCommands(commandsCustom, false));
+
+    // Step 5: Perform a simple synchronous translation
+    String resultCustom = customTranslator.translate("Hello world", "pt"); // Translate to Portuguese
+    System.out.println("customTranslator - Translated text: " + resultCustom);
+
+    // Step 6: Perform a synchronous translation with a specified source language
+    String resultWithSourceCustom = customTranslator.translate("Hello world", "en", "es"); // Translate from English to Spanish
+    System.out.println("customTranslator - Translated to Spanish: " + resultWithSourceCustom);
+
+    // Step 7: Perform an asynchronous translation
+    CompletableFuture<String> translationFutureCustom = customTranslator.translateAsync("Hello world", "en", "fr");
+
+    // Handle the asynchronous result
+    translationFutureCustom
+            .thenAccept(text -> {
+                System.out.println("customTranslator - Translation: " + text);
+            })
+            .exceptionally(ex -> {
+                System.err.println("customTranslator - Translation failed: " + ex.getMessage());
+                return null;
+            });
+
+    // Wait for the asynchronous operation to complete
+    translationFutureCustom.join();
+
+    customTranslator.close();
 }
 ```
 
