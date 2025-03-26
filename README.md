@@ -615,7 +615,7 @@ When enabled:
 ```xml
 <dependency>
     <groupId>com.vidigal.code</groupId>
-    <artifactId>libretranslate-java</artifactId>
+    <artifactId>libretranslate-java-JDK20</artifactId>
     <version>1.0.0</version>
 </dependency>
 ```
@@ -623,7 +623,7 @@ When enabled:
 ### Gradle
 
 ```groovy
-implementation 'com.vidigal.code:libretranslate-java:1.0.0'
+implementation 'com.vidigal.code:libretranslate-java-JDK20:1.0.0'
 ```
 
 ## License
