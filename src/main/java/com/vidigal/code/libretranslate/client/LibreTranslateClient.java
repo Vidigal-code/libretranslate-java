@@ -1,331 +1,202 @@
 package com.vidigal.code.libretranslate.client;
 
+import com.vidigal.code.libretranslate.cache.CacheFactory;
+import com.vidigal.code.libretranslate.cache.TranslationCache;
+import com.vidigal.code.libretranslate.cache.TranslationCacheService;
 import com.vidigal.code.libretranslate.config.LibreTranslateConfig;
 import com.vidigal.code.libretranslate.exception.TranslationException;
+import com.vidigal.code.libretranslate.http.HttpRequestHandler;
+import com.vidigal.code.libretranslate.http.HttpRequestService;
+import com.vidigal.code.libretranslate.http.HttpResponse;
 import com.vidigal.code.libretranslate.language.Language;
+import com.vidigal.code.libretranslate.ratelimit.RateLimiterFactory;
+import com.vidigal.code.libretranslate.ratelimit.RateLimiterService;
+import com.vidigal.code.libretranslate.ratelimit.RateLimitMetrics;
 import com.vidigal.code.libretranslate.service.TranslatorService;
-import com.vidigal.code.libretranslate.util.JsonUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.io.*;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Client implementation for the LibreTranslate API providing text translation services.
- * Features include rate limiting, caching, asynchronous translation, and performance monitoring.
- *
- * <p>This client implements the {@link TranslatorService} interface and manages resources
- * automatically when used with try-with-resources (implements {@link AutoCloseable}).</p>
- *
- * @author Refactored version Kauan Vidigal
+ * Client implementation for the LibreTranslate API with modular components.
+ * <p>
+ * Integrates TranslationCacheService, RateLimiterService, and other supporting components
+ * to provide a robust translation service.
  */
-public class LibreTranslateClient extends AbstractTranslatorClient implements TranslatorService, AutoCloseable {
+public class LibreTranslateClient implements TranslatorService {
+    private static final Logger LOGGER = LoggerFactory.getLogger(LibreTranslateClient.class);
 
-    // ==================== Constants ====================
 
-    /**
-     * Default source language code when none is specified
-     */
+
+    // Constants
     public static final String DEFAULT_SOURCE_LANGUAGE = Language.AUTO.getCode();
-
-    /**
-     * Cache entry expiration time in milliseconds (5 minutes)
-     */
-    private static final long CACHE_EXPIRATION_TIME_MS = 5 * 60 * 1000;
-
-    /**
-     * Plain text format for API requests
-     */
     private static final String FORMAT_TEXT = "text";
+    private static final long METRICS_LOGGING_INTERVAL_MINUTES = 5;
 
-    /**
-     * Error message for empty server responses
-     */
-    private static final String ERROR_MESSAGE_EMPTY_RESPONSE = "Empty response from server";
-
-    /**
-     * Error message for invalid command format
-     */
-    private static final String ERROR_MESSAGE_INVALID_COMMAND = "Invalid command format";
-
-    /**
-     * HTTP status code for rate limit exceeded
-     */
-    private static final int HTTP_TOO_MANY_REQUESTS = 429;
-
-    // ==================== Configuration Options ====================
-
-    /**
-     * Flag to enable/disable cache logging
-     */
-    public static boolean CACHE_LOG = false;
-
-    // ==================== Cache Monitoring ====================
-
-    /**
-     * Counter for cache hits
-     */
-    private final AtomicInteger cacheHits = new AtomicInteger(0);
-
-    /**
-     * Counter for cache misses
-     */
-    private final AtomicInteger cacheMisses = new AtomicInteger(0);
-
-    // ==================== API Usage Monitoring ====================
-
-    /**
-     * Counter for total API calls
-     */
-    private final AtomicInteger apiCalls = new AtomicInteger(0);
-
-    /**
-     * Counter for successful API responses
-     */
-    private final AtomicInteger successfulResponses = new AtomicInteger(0);
-
-    /**
-     * Counter for error API responses
-     */
-    private final AtomicInteger errorResponses = new AtomicInteger(0);
-
-    /**
-     * Accumulator for total API response time
-     */
-    private final AtomicLong totalResponseTime = new AtomicLong(0);
-
-    // ==================== Rate Limiting ====================
-
-    /**
-     * Scheduler for rate limit window reset
-     */
-    private final ScheduledExecutorService scheduler;
-
-    /**
-     * Lock object for rate limiting synchronization
-     */
-    private final Object rateLimitLock = new Object();
-
-    /**
-     * Counter for requests in the current rate limit window
-     */
-    private final AtomicInteger requestCounter = new AtomicInteger(0);
-
-    /**
-     * Maximum requests allowed per time window
-     */
-    private final int maxRequestsPerWindow;
-
-    /**
-     * Time window size in milliseconds
-     */
-    private final long windowSizeMs;
-
-    /**
-     * Minimum interval between requests in milliseconds
-     */
-    private final long minRequestIntervalMs;
-
-    /**
-     * Start time of the current rate limit window
-     */
-    private volatile long windowStartTime = System.currentTimeMillis();
-
-    /**
-     * Timestamp of the last request
-     */
-    private long lastRequestTime = 0;
-
-    // ==================== Resources ====================
-
-    /**
-     * Configuration object containing API settings
-     */
+    // Configuration and Services
     private final LibreTranslateConfig config;
+    private final HttpRequestService requestService;
+    private final TranslationCacheService translationCache;
+    private final RateLimiterService rateLimiter;
 
-    /**
-     * Thread pool for asynchronous operations
-     */
+    // Monitoring
+    private final AtomicInteger apiCalls = new AtomicInteger(0);
+    private final AtomicInteger successfulResponses = new AtomicInteger(0);
+    private final AtomicInteger errorResponses = new AtomicInteger(0);
+    private final AtomicLong totalResponseTime = new AtomicLong(0);
+    private final Map<String, AtomicInteger> languagePairCounts = new ConcurrentHashMap<>();
+    private final Map<Integer, AtomicInteger> responseCodeCounts = new ConcurrentHashMap<>();
+
+    // Asynchronous Processing
     private final ExecutorService executorService;
+    private final ScheduledExecutorService schedulerService;
 
     /**
      * Constructs a new LibreTranslate client with the specified configuration.
-     * Initializes rate limiting, caching, and monitoring components.
      *
-     * @param config Configuration object containing API details and rate limits
-     * @throws TranslationException if the configuration is null
+     * @param config Configuration object containing API details
+     * @throws TranslationException if the configuration is invalid
      */
     public LibreTranslateClient(LibreTranslateConfig config) {
         validateConfig(config);
+
         this.config = config;
+        this.requestService = new HttpRequestHandler(config);
+        this.translationCache = CacheFactory.createDefault();
+        
+        // Create a new rate limiter and associate it with the config
+        this.rateLimiter = RateLimiterFactory.create(config.getMaxRequestsPerSecond());
+        
+        // Register the rate limiter with the config so it can be accessed by other components
+        try {
+            // Use reflection to access the package-private setRateLimiter method
+            java.lang.reflect.Method setRateLimiterMethod = 
+                LibreTranslateConfig.class.getDeclaredMethod("setRateLimiter", RateLimiterService.class);
+            setRateLimiterMethod.setAccessible(true);
+            setRateLimiterMethod.invoke(config, rateLimiter);
+        } catch (Exception e) {
+            LOGGER.warn("Failed to register rate limiter with config: {}", e.getMessage());
+        }
+
         this.executorService = createExecutorService();
-        this.scheduler = createSchedulerService();
+        this.schedulerService = createSchedulerService();
 
-        // Initialize rate limiting parameters
-        this.maxRequestsPerWindow = config.getMaxRequestsPerSecond();
-        this.windowSizeMs = 1000; // 1 second window
-        this.minRequestIntervalMs = calculateMinRequestInterval(config.getMaxRequestsPerSecond());
-
-        scheduleWindowReset();
-        scheduleCacheCleanup();
-    }
-
-    /**
-     * Validates that the configuration object is not null.
-     *
-     * @param config Configuration object to validate
-     * @throws TranslationException if the configuration is null
-     */
-    private void validateConfig(LibreTranslateConfig config) {
-        if (config == null) {
-            throw new TranslationException("Configuration cannot be null");
+        // Set up periodic metrics logging if enabled
+        if (TranslationCache.DETAILED_LOGGING) {
+            setupMetricsLogging();
         }
     }
 
     /**
-     * Creates a cached thread pool for executing asynchronous translation requests.
-     *
-     * @return An ExecutorService configured for translation operations
+     * Sets up periodic logging of monitoring metrics and logs initial values.
      */
-    private ExecutorService createExecutorService() {
-        return Executors.newCachedThreadPool();
+    private void setupMetricsLogging() {
+        // Log metrics immediately for initial state
+        logMonitoringMetrics();
+        
+        // Schedule periodic metrics logging
+        schedulerService.scheduleAtFixedRate(
+            this::logMonitoringMetrics,
+            METRICS_LOGGING_INTERVAL_MINUTES,
+            METRICS_LOGGING_INTERVAL_MINUTES,
+            TimeUnit.MINUTES
+        );
+        
+        // Schedule periodic cache cleanup to prevent memory issues
+        schedulerService.scheduleAtFixedRate(
+            () -> LOGGER.debug("Metrics scheduled update running"),
+            10, 
+            30, 
+            TimeUnit.MINUTES
+        );
+        
+        LOGGER.info("Metrics logging scheduled every {} minutes", METRICS_LOGGING_INTERVAL_MINUTES);
     }
-
+    
     /**
-     * Creates a scheduled executor service for periodic tasks.
-     *
-     * @return A ScheduledExecutorService configured with daemon threads
+     * Logs the current monitoring metrics to the configured logger.
      */
-    private ScheduledExecutorService createSchedulerService() {
-        return Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r);
-            t.setDaemon(true);
-            t.setName("RateLimitWindowReset");
-            return t;
-        });
-    }
-
-    /**
-     * Calculates the minimum interval between requests based on the maximum requests per second.
-     *
-     * @param maxRequestsPerSecond Maximum number of requests allowed per second
-     * @return Minimum interval between requests in milliseconds
-     */
-    private long calculateMinRequestInterval(int maxRequestsPerSecond) {
-        return Math.max(10, 1000 / Math.max(1, maxRequestsPerSecond));
-    }
-
-    /**
-     * Schedules the periodic reset of the rate limit window.
-     * Also logs monitoring metrics if cache logging is enabled.
-     */
-    private void scheduleWindowReset() {
-        scheduler.scheduleAtFixedRate(() -> {
-            synchronized (rateLimitLock) {
-                windowStartTime = System.currentTimeMillis();
-                requestCounter.set(0);
-                rateLimitLock.notifyAll(); // Wake up any waiting threads
-            }
-
-            logMetricsIfEnabled();
-        }, 1, 1, TimeUnit.SECONDS);
-    }
-
-    /**
-     * Logs monitoring metrics if cache logging is enabled.
-     */
-    private void logMetricsIfEnabled() {
-        if (CACHE_LOG) {
+    private void logMonitoringMetrics() {
+        try {
             LOGGER.info("=== Monitoring Metrics ===");
             LOGGER.info("Cache Hits: {}", getCacheHits());
             LOGGER.info("Cache Misses: {}", getCacheMisses());
-            LOGGER.info("Total API Calls: {}", getTotalApiCalls());
-            LOGGER.info("Successful Responses: {}", getSuccessfulResponses());
-            LOGGER.info("Error Responses: {}", getErrorResponses());
+            LOGGER.info("Total API Calls: {}", apiCalls.get());
+            LOGGER.info("Successful Responses: {}", successfulResponses.get());
+            LOGGER.info("Error Responses: {}", errorResponses.get());
             LOGGER.info("Average Response Time: {}ms", getAverageResponseTime());
-        }
-    }
-
-    /**
-     * Schedules periodic cleanup of expired cache entries.
-     */
-    private void scheduleCacheCleanup() {
-        scheduler.scheduleAtFixedRate(() -> {
-            long currentTime = System.currentTimeMillis();
-            translationCache.entrySet().removeIf(entry -> {
-                CacheEntry cacheEntry = entry.getValue();
-                return (currentTime - cacheEntry.getTimestamp()) > CACHE_EXPIRATION_TIME_MS;
-            });
-        }, 5, 5, TimeUnit.MINUTES);
-    }
-
-    /**
-     * Releases resources used by this client.
-     * This method should be called when the client is no longer needed to prevent resource leaks.
-     */
-    @Override
-    public void close() {
-        shutdown();
-    }
-
-    /**
-     * Shuts down the ExecutorService and ScheduledExecutorService to release resources.
-     */
-    private void shutdown() {
-        shutdownExecutorService();
-        shutdownSchedulerService();
-    }
-
-    /**
-     * Shuts down the main executor service.
-     */
-    private void shutdownExecutorService() {
-        if (executorService != null && !executorService.isShutdown()) {
-            executorService.shutdown();
+            
+            // Add basic rate limiter info
+            LOGGER.info("Rate Limiter - Max Requests: {}/sec", config.getMaxRequestsPerSecond());
+            
+            // Add detailed rate limiter metrics if available
             try {
-                if (!executorService.awaitTermination(5, TimeUnit.SECONDS)) {
-                    executorService.shutdownNow();
+                RateLimitMetrics metrics = rateLimiter.getMetrics();
+                LOGGER.info("Rate Limiter - Current Rate: {}/sec", metrics.getCurrentRequestRate());
+                LOGGER.info("Rate Limiter - Success Rate: {}%", String.format("%.2f", metrics.getSuccessRate() * 100));
+                LOGGER.info("Rate Limiter - Available Capacity: {} tokens", metrics.getAvailableTokens());
+                
+                if (metrics.isInBackoffMode()) {
+                    LOGGER.info("Rate Limiter - BACKOFF MODE - Remaining: {}ms", metrics.getBackoffRemainingMs());
                 }
-            } catch (InterruptedException e) {
-                executorService.shutdownNow();
-                Thread.currentThread().interrupt();
-                LOGGER.warn("ExecutorService shutdown was interrupted", e);
+            } catch (Exception e) {
+                LOGGER.debug("Failed to log rate limiter metrics: {}", e.getMessage());
             }
+            
+            // Add basic cache info
+            LOGGER.info("Cache Hit Ratio: {}", String.format("%.2f%%", calculateCacheHitRatio() * 100));
+            
+            // Log language pair statistics if any
+            if (!languagePairCounts.isEmpty()) {
+                logLanguageStatistics();
+            }
+            
+            // Log response code statistics if any
+            if (!responseCodeCounts.isEmpty()) {
+                logResponseCodeStatistics();
+            }
+        } catch (Exception e) {
+            LOGGER.error("Error while logging metrics", e);
         }
+    }
+    
+    /**
+     * Logs statistics about language pairs used in translations
+     */
+    private void logLanguageStatistics() {
+        LOGGER.info("=== Language Pair Statistics ===");
+        languagePairCounts.entrySet().stream()
+            .sorted((e1, e2) -> e2.getValue().get() - e1.getValue().get())
+            .limit(5)
+            .forEach(e -> LOGGER.info("  {} → {} translations", e.getKey(), e.getValue().get()));
+    }
+    
+    /**
+     * Logs statistics about HTTP response codes
+     */
+    private void logResponseCodeStatistics() {
+        LOGGER.info("=== Response Code Statistics ===");
+        responseCodeCounts.entrySet().stream()
+            .sorted(Map.Entry.comparingByKey())
+            .forEach(e -> LOGGER.info("  HTTP {}: {} responses", e.getKey(), e.getValue().get()));
     }
 
     /**
-     * Shuts down the scheduler service.
+     * Calculates the cache hit ratio from available metrics.
+     * 
+     * @return The ratio of cache hits to total cache accesses (0.0-1.0)
      */
-    private void shutdownSchedulerService() {
-        if (scheduler != null && !scheduler.isShutdown()) {
-            scheduler.shutdown();
-            try {
-                if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) {
-                    scheduler.shutdownNow();
-                }
-            } catch (InterruptedException e) {
-                scheduler.shutdownNow();
-                Thread.currentThread().interrupt();
-                LOGGER.warn("ScheduledExecutorService shutdown was interrupted", e);
-            }
-        }
+    private double calculateCacheHitRatio() {
+        int hits = getCacheHits();
+        int misses = getCacheMisses();
+        int total = hits + misses;
+        return total > 0 ? (double) hits / total : 0.0;
     }
 
-    /**
-     * Translates text to the specified target language using the default source language.
-     *
-     * @param text           The text to translate
-     * @param targetLanguage The target language code
-     * @return The translated text
-     * @throws TranslationException if translation fails
-     */
     @Override
     public String translate(String text, String targetLanguage) {
         if (!Language.isSupportedLanguage(targetLanguage)) {
@@ -350,37 +221,22 @@ public class LibreTranslateClient extends AbstractTranslatorClient implements Tr
             return "";
         }
 
-        String cacheKey = generateCacheKey(text, sourceLanguage, targetLanguage);
-        String translatedText = checkCache(cacheKey);
+        String cacheKey = translationCache.generateCacheKey(text, sourceLanguage, targetLanguage);
+        Optional<String> translatedTextOpt = translationCache.get(cacheKey);
 
-        if (translatedText != null) {
-            return translatedText;
+        // Found in cache, log and return
+        if (translatedTextOpt.isPresent()) {
+            if (TranslationCache.DETAILED_LOGGING && apiCalls.get() % 10 == 0) {
+                LOGGER.debug("Cache hit for: [{}→{}] text length: {}", 
+                    sourceLanguage, targetLanguage, text.length());
+            }
+            return translatedTextOpt.get();
         }
 
+        // Not in cache, perform translation
         return performTranslation(text, sourceLanguage, targetLanguage, cacheKey);
     }
 
-    /**
-     * Checks the cache for an existing translation.
-     *
-     * @param cacheKey The cache key to check
-     * @return The cached translation or null if not found
-     */
-    private String checkCache(String cacheKey) {
-        if (translationCache.containsKey(cacheKey)) {
-            CacheEntry cacheEntry = translationCache.get(cacheKey);
-
-            if (CACHE_LOG) {
-                LOGGER.debug("Cache hit for key: {}", cacheKey);
-            }
-
-            cacheHits.incrementAndGet();
-            return cacheEntry.getValue();
-        } else {
-            cacheMisses.incrementAndGet();
-            return null;
-        }
-    }
 
     /**
      * Performs the actual translation operation by calling the API.
@@ -394,17 +250,48 @@ public class LibreTranslateClient extends AbstractTranslatorClient implements Tr
      */
     private String performTranslation(String text, String sourceLanguage, String targetLanguage, String cacheKey) {
         try {
-            applyRateLimit();
+            // Track language pair statistics
+            String langPair = sourceLanguage + "→" + targetLanguage;
+            languagePairCounts.computeIfAbsent(langPair, k -> new AtomicInteger(0))
+                .incrementAndGet();
+            
+            // Use rate limiter to enforce API rate limits
+            boolean acquired = false;
+            try {
+                acquired = rateLimiter.acquire();
+                if (!acquired) {
+                    LOGGER.warn("Rate limit exceeded for translation request, delaying execution");
+                    // If we couldn't acquire a permit, wait and try again with a small delay
+                    Thread.sleep(500);
+                    acquired = rateLimiter.acquire();
+                    if (!acquired) {
+                        throw new TranslationException("Rate limit exceeded, request throttled");
+                    }
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new TranslationException("Translation interrupted while waiting for rate limit", e);
+            }
+            
             Map<String, String> params = createTranslationParams(text, sourceLanguage, targetLanguage);
 
             long startTime = System.currentTimeMillis();
-            HttpResponse response = sendHttpRequest(config.getApiUrl(), "POST", params);
+            HttpResponse response = requestService.sendHttpRequest(config.getApiUrl(), "POST", params);
             long responseTime = System.currentTimeMillis() - startTime;
 
             updateMetrics(response, responseTime);
 
-            String translatedText = handleTranslationResponse(response.getBody());
-            translationCache.putIfAbsent(cacheKey, new CacheEntry(translatedText));
+            // Handle rate limiting if needed
+            if (response.isRateLimited()) {
+                requestService.handleRateLimitExceeded(response);
+                
+                // Retry the request after rate limit handling
+                response = requestService.sendHttpRequest(config.getApiUrl(), "POST", params);
+                updateMetrics(response, System.currentTimeMillis() - startTime);
+            }
+
+            String translatedText = requestService.handleTranslationResponse(response.getBody());
+            translationCache.put(cacheKey, translatedText);
 
             return translatedText;
         } catch (Exception e) {
@@ -412,13 +299,36 @@ public class LibreTranslateClient extends AbstractTranslatorClient implements Tr
         }
     }
 
+
     /**
-     * Creates the parameters map for a translation request.
+     * Updates metrics based on the API response.
      *
-     * @param text           The text to translate
-     * @param sourceLanguage The source language code
-     * @param targetLanguage The target language code
-     * @return A map of request parameters
+     * @param response     The HTTP response from the API
+     * @param responseTime The time taken to get the response
+     */
+    private void updateMetrics(HttpResponse response, long responseTime) {
+        apiCalls.incrementAndGet();
+        totalResponseTime.addAndGet(responseTime);
+        
+        // Track response code statistics
+        int statusCode = response.getStatusCode();
+        responseCodeCounts.computeIfAbsent(statusCode, k -> new AtomicInteger(0))
+            .incrementAndGet();
+        
+        if (response.isSuccessful()) {
+            successfulResponses.incrementAndGet();
+        } else {
+            errorResponses.incrementAndGet();
+        }
+    }
+
+    /**
+     * Creates parameters map for the translation request.
+     *
+     * @param text           Text to translate
+     * @param sourceLanguage Source language code
+     * @param targetLanguage Target language code
+     * @return Map of parameters for the translation request
      */
     private Map<String, String> createTranslationParams(String text, String sourceLanguage, String targetLanguage) {
         Map<String, String> params = new HashMap<>();
@@ -434,22 +344,6 @@ public class LibreTranslateClient extends AbstractTranslatorClient implements Tr
         return params;
     }
 
-    /**
-     * Updates metrics based on the API response.
-     *
-     * @param response     The HTTP response from the API
-     * @param responseTime The time taken to get the response
-     */
-    private void updateMetrics(HttpResponse response, long responseTime) {
-        totalResponseTime.addAndGet(responseTime);
-        apiCalls.incrementAndGet();
-
-        if (response.getStatusCode() >= 200 && response.getStatusCode() < 300) {
-            successfulResponses.incrementAndGet();
-        } else {
-            errorResponses.incrementAndGet();
-        }
-    }
 
     /**
      * Validates the input parameters for translation.
@@ -476,77 +370,6 @@ public class LibreTranslateClient extends AbstractTranslatorClient implements Tr
         }
 
         return true;
-    }
-
-    /**
-     * Applies rate limiting using a token bucket algorithm with a sliding window.
-     * This implementation handles both per-second limits and ensures minimum intervals
-     * between requests to prevent API overload.
-     *
-     * @throws RuntimeException if interrupted while waiting
-     */
-    private void applyRateLimit() {
-        synchronized (rateLimitLock) {
-            try {
-                enforceMinimumRequestInterval();
-                checkAndResetWindow();
-                waitIfRateLimitExceeded();
-
-                // Increment counter and update last request time
-                requestCounter.incrementAndGet();
-                lastRequestTime = System.currentTimeMillis();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new RuntimeException("Interrupted while applying rate limit", e);
-            }
-        }
-    }
-
-    /**
-     * Enforces the minimum interval between requests.
-     *
-     * @throws InterruptedException if the thread is interrupted while sleeping
-     */
-    private void enforceMinimumRequestInterval() throws InterruptedException {
-        long now = System.currentTimeMillis();
-        long timeSinceLastRequest = now - lastRequestTime;
-
-        if (timeSinceLastRequest < minRequestIntervalMs) {
-            long waitTime = minRequestIntervalMs - timeSinceLastRequest;
-            Thread.sleep(waitTime);
-        }
-    }
-
-    /**
-     * Checks if the current rate limit window has expired and resets it if necessary.
-     */
-    private void checkAndResetWindow() {
-        long now = System.currentTimeMillis();
-        if (now - windowStartTime >= windowSizeMs) {
-            windowStartTime = now;
-            requestCounter.set(0);
-        }
-    }
-
-    /**
-     * Waits if the rate limit has been exceeded for the current window.
-     *
-     * @throws InterruptedException if the thread is interrupted while waiting
-     */
-    private void waitIfRateLimitExceeded() throws InterruptedException {
-        long now = System.currentTimeMillis();
-        while (requestCounter.get() >= maxRequestsPerWindow) {
-            long timeToNextWindow = windowSizeMs - (now - windowStartTime);
-            if (timeToNextWindow > 0) {
-                LOGGER.debug("Rate limit reached. Waiting for {}ms", timeToNextWindow);
-                rateLimitLock.wait(timeToNextWindow + 10); // Add small buffer
-                now = System.currentTimeMillis();
-            } else {
-                // Window should have reset, but manually reset if needed
-                windowStartTime = now;
-                requestCounter.set(0);
-            }
-        }
     }
 
     /**
@@ -580,188 +403,6 @@ public class LibreTranslateClient extends AbstractTranslatorClient implements Tr
         }, executorService);
     }
 
-    /**
-     * Sends an HTTP request and returns the response.
-     *
-     * @param apiUrl The API URL to send the request to
-     * @param method The HTTP method (e.g., "GET", "POST")
-     * @param params The request parameters
-     * @return The HTTP response
-     * @throws IOException If the request fails
-     */
-    private HttpResponse sendHttpRequest(String apiUrl, String method, Map<String, String> params) throws IOException {
-        HttpURLConnection connection = null;
-        try {
-            connection = setupConnection(apiUrl, method);
-
-            if ("POST".equals(method)) {
-                sendRequestBody(connection, params);
-            }
-
-            int responseCode = connection.getResponseCode();
-            String responseBody = readResponseBody(connection, responseCode);
-
-            // Handle rate limiting (429 Too Many Requests)
-            if (responseCode == HTTP_TOO_MANY_REQUESTS) {
-                return handleRateLimitExceeded(connection, apiUrl, method, params);
-            } else if (responseCode >= 400) {
-                LOGGER.error("HTTP request failed with code {}: {}", responseCode, responseBody);
-            }
-
-            return new HttpResponse(responseCode, responseBody, connection.getHeaderFields());
-
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("Request interrupted", e);
-        } finally {
-            if (connection != null) {
-                connection.disconnect();
-            }
-        }
-    }
-
-    /**
-     * Sets up an HTTP connection with appropriate headers and timeouts.
-     *
-     * @param apiUrl The API URL to connect to
-     * @param method The HTTP method to use
-     * @return A configured HttpURLConnection
-     * @throws IOException if opening the connection fails
-     */
-    private HttpURLConnection setupConnection(String apiUrl, String method) throws IOException {
-        URL url = new URL(apiUrl);
-        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-        connection.setRequestMethod(method);
-        connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
-        connection.setRequestProperty("Accept", "application/json");
-        connection.setConnectTimeout(config.getConnectionTimeout());
-        connection.setReadTimeout(config.getSocketTimeout());
-        return connection;
-    }
-
-    /**
-     * Sends the request body to the connection's output stream.
-     *
-     * @param connection The HTTP connection
-     * @param params     The parameters to send
-     * @throws IOException if writing to the output stream fails
-     */
-    private void sendRequestBody(HttpURLConnection connection, Map<String, String> params) throws IOException {
-        connection.setDoOutput(true);
-        try (OutputStream os = connection.getOutputStream()) {
-            os.write(buildRequestBody(params).getBytes(StandardCharsets.UTF_8));
-        }
-    }
-
-    /**
-     * Reads the response body from the connection.
-     *
-     * @param connection   The HTTP connection
-     * @param responseCode The HTTP response code
-     * @return The response body as a string
-     * @throws IOException if reading the response fails
-     */
-    private String readResponseBody(HttpURLConnection connection, int responseCode) throws IOException {
-        StringBuilder responseBody = new StringBuilder();
-        try (InputStream inputStream = (responseCode >= 200 && responseCode < 300)
-                ? connection.getInputStream()
-                : connection.getErrorStream();
-             BufferedReader br = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
-
-            String line;
-            while ((line = br.readLine()) != null) {
-                responseBody.append(line.trim());
-            }
-        }
-        return responseBody.toString();
-    }
-
-    /**
-     * Handles the case when the rate limit is exceeded (HTTP 429).
-     *
-     * @param connection The HTTP connection
-     * @param apiUrl     The API URL
-     * @param method     The HTTP method
-     * @param params     The request parameters
-     * @return The HTTP response after retrying
-     * @throws IOException          if the request fails
-     * @throws InterruptedException if waiting is interrupted
-     */
-    private HttpResponse handleRateLimitExceeded(HttpURLConnection connection, String apiUrl,
-                                                 String method, Map<String, String> params)
-            throws IOException, InterruptedException {
-
-        String retryAfter = connection.getHeaderField("Retry-After");
-        long retryAfterMs = retryAfter != null
-                ? Long.parseLong(retryAfter) * 1000
-                : config.getRateLimitCooldown();
-
-        LOGGER.warn("Rate limit exceeded. Server suggests retry after {}ms", retryAfterMs);
-        Thread.sleep(retryAfterMs);
-        return sendHttpRequest(apiUrl, method, params); // Retry the request
-    }
-
-    /**
-     * Builds the request body from parameters.
-     *
-     * @param params The parameters map
-     * @return The encoded request body
-     * @throws UnsupportedEncodingException If encoding fails
-     */
-    private String buildRequestBody(Map<String, String> params) throws UnsupportedEncodingException {
-        StringBuilder result = new StringBuilder();
-        boolean first = true;
-
-        for (Map.Entry<String, String> entry : params.entrySet()) {
-            if (first) {
-                first = false;
-            } else {
-                result.append("&");
-            }
-            result.append(URLEncoder.encode(entry.getKey(), StandardCharsets.UTF_8));
-            result.append("=");
-            result.append(URLEncoder.encode(entry.getValue(), StandardCharsets.UTF_8));
-        }
-
-        return result.toString();
-    }
-
-    /**
-     * Handles the translation response from the API.
-     * Parses the JSON response and extracts the translated text.
-     *
-     * @param responseBody The raw response body from the API
-     * @return The translated text if successful
-     * @throws TranslationException If the response is invalid or contains errors
-     */
-    private String handleTranslationResponse(String responseBody) {
-        if (isEmpty(responseBody)) {
-            throw new TranslationException(ERROR_MESSAGE_EMPTY_RESPONSE);
-        }
-
-        try {
-            Map<String, Object> jsonResponse = JsonUtil.fromJson(responseBody, Map.class);
-
-            // Check for error response
-            if (jsonResponse.containsKey("error")) {
-                String errorMessage = (String) jsonResponse.get("error");
-                throw new TranslationException("API returned error: " + errorMessage);
-            }
-
-            // Extract translated text
-            if (jsonResponse.containsKey("translatedText")) {
-                String translatedText = (String) jsonResponse.get("translatedText");
-                if (isEmpty(translatedText)) {
-                    throw new TranslationException("Translated text is empty in the response");
-                }
-                return translatedText;
-            } else {
-                throw new TranslationException("Unexpected response format: 'translatedText' field missing");
-            }
-        } catch (ClassCastException e) {
-            throw new TranslationException("Unexpected data type in JSON response", e);
-        }
-    }
 
     /**
      * Processes a list of translation commands and returns the results.
@@ -772,105 +413,8 @@ public class LibreTranslateClient extends AbstractTranslatorClient implements Tr
      */
     @Override
     public List<String> processCommands(List<String> commands, boolean log) {
-        return Collections.singletonList(String.join("\n", commands.parallelStream()
-                .map(command -> {
-                    try {
-                        return processSingleCommand(command, log);
-                    } catch (Exception e) {
-                        LOGGER.error("Command processing failed for command: " + command, e);
-                        return "Error: " + e.getMessage();
-                    }
-                })
-                .toList()));
-    }
-
-    /**
-     * Processes a single translation command.
-     *
-     * @param command The command to process
-     * @param log     Whether to log the result
-     * @return The result of processing the command
-     */
-    private String processSingleCommand(String command, boolean log) {
-        try {
-            String[] parts = command.split(";");
-            if (parts.length < 2) {
-                throw new TranslationException("Invalid command format: " + command);
-            }
-
-            String mode = parts[0];
-            if (mode.startsWith("m:")) {
-                return handleModeSpecificCommand(parts, log);
-            } else if (mode.startsWith("t:")) {
-                return handleNormalCommand(parts, log);
-            } else {
-                throw new TranslationException(ERROR_MESSAGE_INVALID_COMMAND + ": " + command);
-            }
-        } catch (Exception e) {
-            LOGGER.error("Failed to process command: {}", command, e);
-            return "Error: " + e.getMessage();
-        }
-    }
-
-    /**
-     * Extracts translation parameters from command parts.
-     *
-     * @param parts The command parts
-     * @return A map containing the extracted parameters (text, sourceLang, targetLang)
-     */
-    private Map<String, String> extractTranslationParams(String[] parts) {
-        Map<String, String> params = new HashMap<>();
-        params.put("text", extractText(parts[0]));
-        params.put("sourceLang", extractSourceLanguage(parts));
-        params.put("targetLang", extractTargetLanguage(parts));
-        return params;
-    }
-
-    /**
-     * Handles mode-specific translation commands (e.g., synchronous or asynchronous).
-     *
-     * @param parts The command parts
-     * @param log   Whether to log the result
-     * @return The result of the translation
-     * @throws ExecutionException   If asynchronous execution fails
-     * @throws InterruptedException If the thread is interrupted
-     */
-    private String handleModeSpecificCommand(String[] parts, boolean log) throws ExecutionException, InterruptedException {
-        String operationMode = extractOperationMode(parts[0]);
-        Map<String, String> params = extractTranslationParams(Arrays.copyOfRange(parts, 1, parts.length));
-        String text = params.get("text");
-        String sourceLang = params.get("sourceLang");
-        String targetLang = params.get("targetLang");
-
-        switch (operationMode) {
-            case "s":
-                String result = translate(text, sourceLang, targetLang);
-                return log ? "Synchronous Translation: " + result : result;
-
-            case "as":
-                CompletableFuture<String> future = translateAsync(text, sourceLang, targetLang);
-                return log ? "Asynchronous Translation: " + future.get() : future.get();
-
-            default:
-                throw new TranslationException("Invalid operation mode: " + operationMode);
-        }
-    }
-
-    /**
-     * Handles normal translation commands without specific modes.
-     *
-     * @param parts The command parts
-     * @param log   Whether to log the result
-     * @return The result of the translation
-     */
-    private String handleNormalCommand(String[] parts, boolean log) {
-        Map<String, String> params = extractTranslationParams(parts);
-        String text = params.get("text");
-        String sourceLang = params.get("sourceLang");
-        String targetLang = params.get("targetLang");
-
-        String result = translate(text, sourceLang, targetLang);
-        return log ? "Default Translation: " + result : result;
+        LibreTranslateCommands commandProcessor = new LibreTranslateCommands(this);
+        return commandProcessor.processCommands(commands, log);
     }
 
     /**
@@ -883,132 +427,114 @@ public class LibreTranslateClient extends AbstractTranslatorClient implements Tr
     }
 
     /**
-     * Extracts the operation mode from a command part.
-     *
-     * @param part The command part
-     * @return The operation mode
-     */
-    private String extractOperationMode(String part) {
-        return part.substring(2);
-    }
-
-    /**
-     * Extracts the text from a command part.
-     *
-     * @param part The command part.
-     * @return The extracted text.
-     */
-    private String extractText(String part) {
-        return part.substring(2);
-    }
-
-    /**
-     * Extracts the source language from the command parts.
-     *
-     * @param parts The command parts.
-     * @return The source language code.
-     */
-    private String extractSourceLanguage(String[] parts) {
-        return parts.length > 3 ? parts[2] : DEFAULT_SOURCE_LANGUAGE;
-    }
-
-    /**
-     * Extracts the target language from the command parts.
-     *
-     * @param parts The command parts.
-     * @return The target language code.
-     */
-    private String extractTargetLanguage(String[] parts) {
-        return parts[parts.length - 1];
-    }
-
-
-    /**
      * Utility method to check if a string is null or empty.
      *
      * @param str The string to check
      * @return True if the string is null or empty, false otherwise
      */
-    private boolean isEmpty(String str) {
+    public static boolean isEmpty(String str) {
         return str == null || str.trim().isEmpty();
     }
 
-    /**
-     * Generates a cache key for storing and retrieving translations.
-     *
-     * @param text           The text to translate
-     * @param sourceLanguage The source language code
-     * @param targetLanguage The target language code
-     * @return A unique cache key
-     */
-    private String generateCacheKey(String text, String sourceLanguage, String targetLanguage) {
-        return String.format("%s:%s:%s",
-                sourceLanguage,
-                targetLanguage,
-                text.length() > 100 ? text.substring(0, 100).hashCode() + ":" + text.hashCode() : text.hashCode());
+
+    // Implement AutoCloseable
+    @Override
+    public void close() {
+        shutdownExecutorService(executorService);
+        shutdownExecutorService(schedulerService);
+        
+        try {
+            translationCache.close();
+        } catch (Exception e) {
+            LOGGER.warn("Error closing translation cache: {}", e.getMessage());
+        }
+        
+        try {
+            rateLimiter.close();
+        } catch (Exception e) {
+            LOGGER.warn("Error closing rate limiter: {}", e.getMessage());
+        }
     }
 
-    // ==================== Metrics Methods ====================
-
-    /**
-     * Gets the number of cache hits.
-     *
-     * @return The cache hit count
-     */
     @Override
     public int getCacheHits() {
-        return cacheHits.get();
+        return translationCache.getCacheHits();
     }
 
-    /**
-     * Gets the number of cache misses.
-     *
-     * @return The cache miss count
-     */
     @Override
     public int getCacheMisses() {
-        return cacheMisses.get();
+        return translationCache.getCacheMisses();
     }
 
     /**
-     * Gets the total number of API calls.
+     * Helper method for shutting down executor services.
      *
-     * @return The total API call count
+     * @param service The executor service to shut down
      */
-    @Override
-    public int getTotalApiCalls() {
-        return apiCalls.get();
+    private void shutdownExecutorService(ExecutorService service) {
+        if (service != null && !service.isShutdown()) {
+            service.shutdown();
+            try {
+                if (!service.awaitTermination(5, TimeUnit.SECONDS)) {
+                    service.shutdownNow();
+                    if (!service.awaitTermination(5, TimeUnit.SECONDS)) {
+                        LOGGER.warn("Executor service did not terminate");
+                    }
+                }
+            } catch (InterruptedException e) {
+                service.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
     }
 
     /**
-     * Gets the number of successful API responses.
+     * Creates an ExecutorService for handling asynchronous translation requests.
      *
-     * @return The successful response count
+     * @return A newly created ExecutorService
      */
-    @Override
-    public int getSuccessfulResponses() {
-        return successfulResponses.get();
+    private ExecutorService createExecutorService() {
+        return Executors.newCachedThreadPool(r -> {
+            Thread t = new Thread(r, "TranslationWorker");
+            t.setDaemon(true);
+            return t;
+        });
     }
 
     /**
-     * Gets the number of error API responses.
+     * Creates a ScheduledExecutorService for periodic tasks.
      *
-     * @return The error response count
+     * @return A newly created ScheduledExecutorService
      */
-    @Override
-    public int getErrorResponses() {
-        return errorResponses.get();
+    private ScheduledExecutorService createSchedulerService() {
+        return Executors.newScheduledThreadPool(1, r -> {
+            Thread t = new Thread(r, "TranslationScheduler");
+            t.setDaemon(true);
+            return t;
+        });
     }
 
     /**
-     * Gets the average API response time in milliseconds.
+     * Validates the provided configuration.
      *
-     * @return The average response time or 0 if no calls have been made
+     * @param config The configuration to validate
+     * @throws TranslationException if the configuration is invalid
      */
-    @Override
-    public double getAverageResponseTime() {
-        int calls = apiCalls.get();
-        return calls > 0 ? (double) totalResponseTime.get() / calls : 0;
+    private void validateConfig(LibreTranslateConfig config) {
+        if (config == null) {
+            throw new TranslationException("Configuration cannot be null");
+        }
+    }
+
+    /**
+     * Gets the average response time for API calls in milliseconds.
+     *
+     * @return The average response time, or 0 if no calls have been made
+     */
+    private double getAverageResponseTime() {
+        long total = totalResponseTime.get();
+        int count = apiCalls.get();
+        return count > 0 ? (double) total / count : 0;
     }
 
     /**
@@ -1016,21 +542,47 @@ public class LibreTranslateClient extends AbstractTranslatorClient implements Tr
      */
     @Override
     public void clearMetrics() {
-        cacheHits.set(0);
-        cacheMisses.set(0);
         apiCalls.set(0);
         successfulResponses.set(0);
         errorResponses.set(0);
         totalResponseTime.set(0);
+        
+        translationCache.clearMetrics();
+        
+        rateLimiter.resetMetrics();
+        
+        languagePairCounts.clear();
+        responseCodeCounts.clear();
+        
+        LOGGER.debug("All metrics cleared");
     }
 
     /**
      * Clears the translation cache.
      */
-    @Override
     public void clearCache() {
         translationCache.clear();
+        LOGGER.debug("Translation cache cleared");
     }
 
+    /**
+     * Handles errors by logging them and throwing a TranslationException.
+     *
+     * @param message The error message
+     * @param e       The original exception
+     */
+    protected void handleError(String message, Exception e) {
+        LOGGER.error(message, e);
+        throw new TranslationException(message, e);
+    }
 
+    /**
+     * Handles errors by logging them and throwing a TranslationException.
+     *
+     * @param message The error message
+     */
+    protected void handleError(String message) {
+        LOGGER.error(message);
+        throw new TranslationException(message);
+    }
 }

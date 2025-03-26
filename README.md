@@ -1,207 +1,159 @@
 # LibreTranslate Java Client
 
-Java client for the LibreTranslate API featuring advanced capabilities like rate limiting, caching, and comprehensive monitoring.
+A modern, feature-rich Java client for the LibreTranslate API with advanced capabilities including rate limiting, caching, and comprehensive monitoring. Compatible with JDK-20+.
 
 ## Key Features
 
-- **Synchronous & Asynchronous Translation**
-- **Smart Rate Limiting** (configurable requests per second)
-- **Translation Cache** with expiration and size limits
-- **Metrics Monitoring** (cache hits/misses, average response time)
-- **AutoCloseable Support** for automatic resource management
-- **Batch Command Processing** with multiple operation modes
+- **Synchronous & Asynchronous Translation** - Flexible translation modes to suit different application needs
+- **Smart Adaptive Rate Limiting** - Automatically adjusts request rates based on API responses
+- **Configurable Translation Cache** - Reduces API calls for frequently translated text
+- **Comprehensive Metrics Monitoring** - Track performance with detailed statistics
+- **Resource Management** - Full `AutoCloseable` support for proper cleanup
+- **Command Processing** - Process translation commands individually with flexible operation modes
+- **Modular Architecture** - Clean separation of concerns with well-defined interfaces
 
-## Installation
+## Project Structure
 
-### Maven
-
-```xml
-<dependency>
-    <groupId>com.vidigal.code</groupId>
-    <artifactId>libretranslate-java</artifactId>
-    <version>1.0.0</version>
-</dependency>
+```
+com.vidigal.code.libretranslate
+├── cache           - Caching implementation for translations
+├── client          - Core client implementation
+├── config          - Configuration classes
+├── exception       - Translation-specific exceptions
+├── http            - HTTP request handling
+├── language        - Language code utilities
+├── ratelimit       - Rate limiting implementation
+├── response        - Response processing utilities
+├── service         - Service interfaces and factories
+└── util            - Common utility classes
 ```
 
-### Gradle
+## Examples
 
-```groovy
-implementation 'com.vidigal.code:libretranslate-java-client:1.0.0'
-```
+**Test - 1**
 
-## Configuration
+![Example 1](https://github.com/Vidigal-code/libretranslate-java/blob/main/example/example-1.png?raw=true)
 
-Create a configuration object:
+**Test - 2**
+
+![Example 2](https://github.com/Vidigal-code/libretranslate-java/blob/main/example/example-2.png?raw=true)
+
+## Quick Usage
+
+### Basic Translation
 
 ```java
-
-LibreTranslateConfig config = new LibreTranslateConfig.Builder()
-        .apiUrl("https://libretranslate.com")
-        .apiKey("your-api-key")
-        .maxRequestsPerSecond(10)
-        .connectionTimeout(5000)
-        .socketTimeout(10000)
-        .build();
-
-//Example  simple 2
-LibreTranslateConfig config = TranslatorService.createConfig(API, KEY);
-
-```
-
-## Basic Usage
-
-### Simple Translation
-
-```java
-try (LibreTranslateClient client = new LibreTranslateClient(config)) {
-    String translated = client.translate("Hello", "en", "es");
-    System.out.println(translated); // Hola
+// Create a translator service with API URL and optional key
+try (TranslatorService translator = Translators.create("https://libretranslate.com", "your-api-key")) {
+    // Translate with automatic language detection
+    String result = translator.translate("Hello world", "pt");
+    System.out.println("Translated text: " + result);
+    
+    // Translate with specified source language
+    String resultWithSource = translator.translate("Hello world", "en", "es");
+    System.out.println("Translated to Spanish: " + resultWithSource);
 }
 ```
 
-### Async Translation
+### Asynchronous Translation
 
 ```java
-try (LibreTranslateClient client = new LibreTranslateClient(config)) {
-    CompletableFuture<String> future = client.translateAsync("Goodbye", "en", "fr");
-    future.thenAccept(translation -> {
-        System.out.println("Translation: " + translation); // Au revoir
-    }).join();
+try (TranslatorService translator = Translators.create("https://libretranslate.com", "your-api-key")) {
+    // Perform an asynchronous translation
+    CompletableFuture<String> future = translator.translateAsync("Hello world", "fr");
+    
+    // Handle the result when it completes
+    future
+        .thenAccept(text -> System.out.println("Translation: " + text))
+        .exceptionally(ex -> {
+            System.err.println("Translation failed: " + ex.getMessage());
+            return null;
+        });
+        
+    // Wait for completion if needed
+    future.join();
 }
 ```
 
 ## Advanced Features
 
-### Batch Processing
+### Custom Configuration
 
 ```java
+// Create a custom configuration
+LibreTranslateConfig config = LibreTranslateConfig.builder()
+    .apiUrl("https://libretranslate.com")
+    .apiKey("your-api-key")
+    .connectionTimeout(5000)         // Connection timeout in ms
+    .socketTimeout(10000)            // Socket timeout in ms
+    .maxRequestsPerSecond(10)        // Rate limit
+    .maxRetries(3)                   // Retry count for failures
+    .rateLimitCooldown(5000)         // Cooldown after hitting rate limits
+    .enableRetry(true)               // Enable automatic retries
+    .build();
+
+// Create translator with custom config
+TranslatorService translator = Translators.create(config);
+```
+
+### Command Processing
+
+The library provides a flexible command processing system for handling translation operations:
+
+```java
+// Commands follow a specific format
 List<String> commands = List.of(
-    "m:s;t:Hello;en;es",    // Sync mode
-    "m:as;t:World;en;pt",   // Async mode
-    "t:Thank you;en;ja"     // Default mode (sync)
+    "m:s;t:Hello;en;es",    // Synchronous mode (s)
+    "m:as;t:World;en;pt",   // Asynchronous mode (as)
+    "t:Thank you;en;ja"     // Default mode (implicit synchronous)
 );
 
-List<String> results = client.processCommands(commands, true);
+// Process commands (commands are processed individually)
+List<String> results = translator.processCommands(commands, true);
 results.forEach(System.out::println);
 ```
 
 ### Metrics Monitoring
 
 ```java
-// Enable monitoring logs
-LibreTranslateClient.CacheLog = true;
-
 // Access metrics programmatically
-System.out.println("Cache Hits: " + client.getCacheHits());
-System.out.println("Avg Response: " + client.getAverageResponseTime() + "ms");
-```
+System.out.println("Cache Hits: " + translator.getCacheHits());
+System.out.println("Cache Misses: " + translator.getCacheMisses());
 
-## Resource Management
-
-The client implements `AutoCloseable` and should be used with try-with-resources:
-
-```java
-try (LibreTranslateClient client = new LibreTranslateClient(config)) {
-    // Translation operations...
-} // Automatically closes resources
+// Calculate cache hit ratio
+double hitRatio = (double) translator.getCacheHits() / 
+                 (translator.getCacheHits() + translator.getCacheMisses());
+System.out.printf("Cache Hit Ratio: %.2f%%\n", hitRatio * 100);
 ```
 
 ## Error Handling
 
-All methods throw `TranslationException` for error conditions:
+The library uses `TranslationException` for error conditions:
 
 ```java
 try {
-    String result = client.translate(null, "en", "es");
+    String result = translator.translate("Hello", "invalid-language-code", "es");
 } catch (TranslationException e) {
-    System.err.println("Error: " + e.getMessage());
+    System.err.println("Translation failed: " + e.getMessage());
+    // Handle specific error conditions
 }
 ```
 
-# LibreTranslate Client Configuration
-
-| Parameter              | Description                                                  | Valid Range      | Default Value |
-|------------------------|--------------------------------------------------------------|------------------|---------------|
-| `maxRequestsPerSecond` | Maximum allowed requests per second                          | 1-1000           | 10            |
-| `connectionTimeout`    | Connection establishment timeout (milliseconds)              | > 0 ms           | 5000          |
-| `socketTimeout`        | Response read timeout (milliseconds)                         | > 0 ms           | 10000         |
-| `rateLimitCooldown`    | Cooldown period after hitting API rate limits (milliseconds) | 100-60000 ms     | 5000          |
-
-**Key Improvements:**
-1. Unified table format with consistent naming
-2. Added parameter types in descriptions
-3. Clear validation ranges
-4. Standardized time units
-5. Fixed typo in `rateLimitCooldown` parameter name
-6. Added proper millisecond abbreviations
-
-For a complete configuration reference, see the `LibreTranslateConfig` class documentation.
-
-## Best Practices
-
-1. Always use try-with-resources for client instances.
-2. Leverage cache for frequently translated texts.
-3. Monitor metrics to optimize configuration.
-4. Handle translation-specific exceptions.
-5. Use async operations for high-volume scenarios.
-
-## Technical Limitations
-
-- Maximum cache size: 1000 entries
-- Rate limiting precision: ±10ms
-- Minimum request interval: 10ms
-
-For support and issues: [GitHub Issues](https://github.com/Vidigal-code/libretranslate-java)
-
----
-
-# License
-
-This project is licensed under the **MIT License**.
-
-See the [LICENSE](https://github.com/Vidigal-code/libretranslate-java/blob/main/License.mit) file for more details.
-
-
-# License - API
-
-This project is licensed api under the **MIT License**.
-
-See the [LICENSE](https://github.com/LibreTranslate/LibreTranslate/blob/main/LICENSE) file for more details.
-
-
----
-
-
-
-
-## Credits
-
-- **Creator**: Kauan Vidigal
-- **Translation API**: [LibreTranslate](https://libretranslate.com/)
-- **Contributions**: Contributions are welcome! Feel free to fork the repository, open an issue, or submit a pull request for improvements or new features.
-
-## Links
-- [LibreTranslate API Documentation](https://libretranslate.com/docs)
-- [LibreTranslate API GitHub](https://github.com/LibreTranslate/LibreTranslate)
-
----
-
-## Example Usage
+## Complete Usage Examples
 
 ### Example 1: Basic Usage of `TranslatorService`
 
 ```java
-public static void main(String[] args) {
-
+    public static void main(String[] args) throws Exception {
     // Create a TranslatorService instance with the API URL and API Key
-    TranslatorService translator = TranslatorService.create(API, KEY);
+    TranslatorService translator = Translators.create(API, KEY);
 
     // Define a list of commands for batch processing
     List<String> commands = Arrays.asList(
-        "m:s;t:Hello;en;pt", // Synchronous translation of "Hello" from English (en) to Portuguese (pt)
-        "t:World;pt",        // Translate "World" to Portuguese (pt)
-        "t:Hello;en;pt",     // Translate "Hello" en (English) to Portuguese (pt)
-        "m:as;t:Goodbye;en;es" // Asynchronous translation of "Goodbye" from English (en) to Spanish (es)
+            "m:s;t:Hello;en;pt", // Synchronous translation of "Hello" from English (en) to Portuguese (pt)
+            "t:World;pt",        // Translate "World" to Portuguese (pt)
+            "t:Hello;en;pt",     // Translate "Hello" en (English) to Portuguese (pt)
+            "m:as;t:Goodbye;en;es" // Asynchronous translation of "Goodbye" from English (en) to Spanish (es)
     );
 
     // Process the commands and print the results
@@ -238,10 +190,9 @@ public static void main(String[] args) {
 ### Example 2: Advanced Usage with Custom Configuration
 
 ```java
-public static void main(String[] args) {
-
+    public static void main(String[] args) throws Exception {
     // Step 1: Build a custom configuration using LibreTranslateConfig.Builder
-    LibreTranslateConfig config = new LibreTranslateConfig.Builder()
+    LibreTranslateConfig config = LibreTranslateConfig.builder()
             .apiUrl(API)               // Set the API URL
             .apiKey(KEY)               // Set the API Key
             .rateLimitCooldown(1000)   // Rate limit cooldown (100 and 60000)
@@ -251,14 +202,14 @@ public static void main(String[] args) {
             .build();
 
     // Step 2: Create a TranslatorService instance with the custom configuration
-    TranslatorService customTranslator = TranslatorService.create(config);
+    TranslatorService customTranslator = Translators.create(config);
 
     // Step 3: Define a list of commands for batch processing
     List<String> commandsCustom = Arrays.asList(
-        "m:s;t:Hello;en;pt", // Synchronous translation of "Hello" from English (en) to Portuguese (pt)
-        "t:World;pt",        // Translate "World" to Portuguese (pt)
-        "t:Hello;en;pt",     // Translate "Hello" en (English) to Portuguese (pt)
-        "m:as;t:Goodbye;en;es" // Asynchronous translation of "Goodbye" from English (en) to Spanish (es)
+            "m:s;t:Hello;en;pt", // Synchronous translation of "Hello" from English (en) to Portuguese (pt)
+            "t:World;pt",        // Translate "World" to Portuguese (pt)
+            "t:Hello;en;pt",     // Translate "Hello" en (English) to Portuguese (pt)
+            "m:as;t:Goodbye;en;es" // Asynchronous translation of "Goodbye" from English (en) to Spanish (es)
     );
 
     // Step 4: Process the commands and print the results
@@ -292,17 +243,405 @@ public static void main(String[] args) {
 }
 ```
 
----
+## Configuration Reference
 
-### Summary of Key Changes:
-1. Added more comprehensive examples to demonstrate different use cases.
-2. Updated all method references and variable names for clarity.
-3. Provided additional guidance on custom configuration and asynchronous operations.
-4. Organized the examples into two distinct sections for Basic and Advanced usage.
+| Parameter              | Description                                      | Default     | Range           |
+|------------------------|--------------------------------------------------|-------------|-----------------|
+| `apiUrl`               | LibreTranslate API endpoint URL                  | (Required)  | Valid URL       |
+| `apiKey`               | Authentication key for the API                   | ""          | Any string      |
+| `maxRequestsPerSecond` | Maximum requests per second                      | 10          | 1-1000          |
+| `connectionTimeout`    | Connection establishment timeout (ms)            | 5000        | > 0             |
+| `socketTimeout`        | Socket read timeout (ms)                         | 10000       | > 0             |
+| `maxRetries`           | Maximum retry attempts for failed requests       | 3           | ≥ 0             |
+| `rateLimitCooldown`    | Cooldown period after hitting rate limits (ms)   | 5000        | 100-60000       |
+| `enableRetry`          | Whether to automatically retry failed requests   | true        | true/false      |
 
-This should give your users clear guidance on how to use the **LibreTranslate Java Client** effectively, both with basic operations and more advanced features.
+## Architectural Design
 
----
+The library follows these architectural principles:
 
-Feel free to modify and enhance this project to suit your needs!
+1. **Interface-Based Design** - All major components are defined by interfaces
+2. **Factory Pattern** - Factories provide convenient instance creation 
+3. **Builder Pattern** - For fluid configuration construction
+4. **Strategy Pattern** - Interchangeable algorithm implementations
+5. **Facade Pattern** - Simplified API via the `Translators` class
+
+## Detailed Class Structure and Available Functions
+
+### `TranslatorService` Interface
+
+The core interface for translation operations:
+
+```java
+public interface TranslatorService extends AutoCloseable {
+    // Core translation methods
+    String translate(String text, String targetLanguage);
+    String translate(String text, String sourceLanguage, String targetLanguage);
+    
+    // Asynchronous translation methods
+    CompletableFuture<String> translateAsync(String text, String targetLanguage);
+    CompletableFuture<String> translateAsync(String text, String sourceLanguage, String targetLanguage);
+    
+    // Command processing
+    List<String> processCommands(List<String> commands, boolean log);
+    
+    // Metrics
+    int getCacheHits();
+    int getCacheMisses();
+    void clearMetrics();
+    
+    // Resource management (from AutoCloseable)
+    void close();
+}
+```
+
+### `Translators` Utility Class
+
+Factory facade for creating translator services:
+
+```java
+public final class Translators {
+    // Get factory instance
+    public static TranslatorServiceFactory factory();
+    
+    // Create translator service
+    public static TranslatorService create(String apiUrl, String apiKey);
+    public static TranslatorService create(LibreTranslateConfig config);
+    
+    // Test connection
+    public static boolean testConnection(String apiUrl);
+}
+```
+
+### `LibreTranslateClient` Implementation
+
+Main implementation of the `TranslatorService` interface:
+
+```java
+public class LibreTranslateClient implements TranslatorService {
+    // Constants
+    public static final String DEFAULT_SOURCE_LANGUAGE = Language.AUTO.getCode();
+    
+    // Constructor
+    public LibreTranslateClient(LibreTranslateConfig config);
+    
+    // Translation methods
+    @Override
+    public String translate(String text, String targetLanguage);
+    @Override
+    public String translate(String text, String sourceLanguage, String targetLanguage);
+    
+    // Asynchronous methods
+    @Override
+    public CompletableFuture<String> translateAsync(String text, String targetLanguage);
+    @Override
+    public CompletableFuture<String> translateAsync(String text, String sourceLanguage, String targetLanguage);
+    
+    // Command processing
+    @Override
+    public List<String> processCommands(List<String> commands, boolean log);
+    
+    // Metrics
+    @Override
+    public int getCacheHits();
+    @Override
+    public int getCacheMisses();
+    @Override
+    public void clearMetrics();
+    
+    // Resource management
+    @Override
+    public void close();
+}
+```
+
+### `LibreTranslateConfig` Configuration
+
+Builder-pattern based configuration class:
+
+```java
+public class LibreTranslateConfig {
+    // Create configuration with builder
+    public static Builder builder();
+    
+    // Properties
+    public String getApiUrl();
+    public String getApiKey();
+    public int getConnectionTimeout();
+    public int getSocketTimeout();
+    public int getMaxRequestsPerSecond();
+    public int getMaxRetries();
+    public long getRateLimitCooldown();
+    public boolean isEnableRetry();
+    
+    // Builder class
+    public static class Builder {
+        public Builder apiUrl(String apiUrl);
+        public Builder apiKey(String apiKey);
+        public Builder connectionTimeout(int connectionTimeout);
+        public Builder socketTimeout(int socketTimeout);
+        public Builder maxRequestsPerSecond(int maxRequestsPerSecond);
+        public Builder maxRetries(int maxRetries);
+        public Builder rateLimitCooldown(long rateLimitCooldown);
+        public Builder enableRetry(boolean enableRetry);
+        public LibreTranslateConfig build();
+    }
+}
+```
+
+### `Language` Enumeration
+
+Enumeration of supported languages:
+
+```java
+public enum Language {
+    // Language constants
+    ENGLISH("en"), ALBANIAN("sq"), ARABIC("ar"), AZERBAIJANI("az"),
+    RUSSIAN("ru"), CATALAN("ca"), CHINESE("zh"), CZECH("cs"),
+    DANISH("da"), DUTCH("nl"), ESPERANTO("eo"), FINNISH("fi"),
+    FRENCH("fr"), GERMAN("de"), GREEK("el"), HEBREW("he"),
+    HINDI("hi"), HUNGARIAN("hu"), INDONESIAN("id"), IRISH("ga"),
+    ITALIAN("it"), JAPANESE("ja"), KOREAN("ko"), PERSIAN("fa"),
+    POLISH("pl"), PORTUGUESE("pt"), SLOVAK("sk"), SPANISH("es"),
+    SWEDISH("sv"), TURKISH("tr"), UKRAINIAN("uk"), AUTO("auto");
+    
+    // Methods
+    public String getCode();
+    public static Language fromCode(String code);
+    public static boolean isValidLanguageCode(String code);
+    public static List<String> getAllLanguageCodes();
+    public static boolean isSupportedLanguage(String code);
+    public static boolean isSupportedLanguage(String... languages);
+}
+```
+
+### `TranslationCacheService` Interface
+
+Interface for translation caching:
+
+```java
+public interface TranslationCacheService extends AutoCloseable {
+    // Cache operations
+    String generateCacheKey(String text, String sourceLanguage, String targetLanguage);
+    Optional<String> get(String cacheKey);
+    void put(String cacheKey, String translatedText);
+    void clear();
+    
+    // Metrics
+    int getCacheHits();
+    int getCacheMisses();
+    void clearMetrics();
+    
+    // Resource management
+    void close();
+}
+```
+
+### `TranslationCache` Implementation
+
+Implementation of the `TranslationCacheService` interface:
+
+```java
+public class TranslationCache implements TranslationCacheService {
+    // Enable/disable detailed logging
+    public static boolean DETAILED_LOGGING = false;
+    
+    // Constructors
+    public TranslationCache();
+    public TranslationCache(int maxCacheSize, long cacheExpirationMs);
+    public TranslationCache(int maxCacheSize, long cacheExpirationMs, long cleanupIntervalMs);
+    
+    // Cache operations
+    @Override
+    public String generateCacheKey(String text, String sourceLanguage, String targetLanguage);
+    @Override
+    public Optional<String> get(String cacheKey);
+    @Override
+    public void put(String cacheKey, String translatedText);
+    @Override
+    public void clear();
+    
+    // Metrics
+    @Override
+    public int getCacheHits();
+    @Override
+    public int getCacheMisses();
+    @Override
+    public void clearMetrics();
+    
+    // Resource management
+    @Override
+    public void close();
+}
+```
+
+### `CacheFactory` Utility Class
+
+Factory for creating cache services:
+
+```java
+public final class CacheFactory {
+    // Create cache services
+    public static TranslationCacheService createDefault();
+    public static TranslationCacheService create(int maxSize, long expirationMs);
+    public static TranslationCacheService create(int maxSize, long expirationMs, long cleanupIntervalMs);
+    public static TranslationCacheService createSmall();
+    public static TranslationCacheService createLarge();
+}
+```
+
+### `RateLimiterService` Interface
+
+Interface for rate limiting:
+
+```java
+public interface RateLimiterService extends AutoCloseable {
+    // Rate limiting operations
+    boolean acquire() throws InterruptedException;
+    void notifyRateLimitExceeded(int retryAfterSeconds);
+    
+    // Metrics and control
+    RateLimitMetrics getMetrics();
+    void resetMetrics();
+    void reset();
+    
+    // Resource management
+    void close();
+}
+```
+
+### `RateLimiter` Implementation
+
+Implementation of the `RateLimiterService` interface:
+
+```java
+public class RateLimiter implements RateLimiterService {
+    // Enable/disable detailed logging
+    public static boolean DETAILED_LOGGING = false;
+    
+    // Constructors
+    public RateLimiter(int requestsPerSecond);
+    public RateLimiter(int requestsPerSecond, double burstCapacityMultiplier, long maxWaitTimeNanos);
+    
+    // Rate limiting operations
+    @Override
+    public boolean acquire() throws InterruptedException;
+    @Override
+    public void notifyRateLimitExceeded(int retryAfterSeconds);
+    
+    // Metrics and control
+    @Override
+    public RateLimitMetrics getMetrics();
+    @Override
+    public void resetMetrics();
+    @Override
+    public void reset();
+    
+    // Resource management
+    @Override
+    public void close();
+}
+```
+
+### `RateLimiterFactory` Utility Class
+
+Factory for creating rate limiter services:
+
+```java
+public final class RateLimiterFactory {
+    // Create rate limiter services
+    public static RateLimiterService createDefault();
+    public static RateLimiterService create(int requestsPerSecond);
+    public static RateLimiterService create(int requestsPerSecond, double burstCapacityMultiplier, long maxWaitTimeMs);
+    public static RateLimiterService createLowThroughput();
+    public static RateLimiterService createHighThroughput();
+}
+```
+
+### `LibreTranslateCommands` Command Processor
+
+Handler for processing translation commands:
+
+```java
+public class LibreTranslateCommands {
+    // Constructor
+    public LibreTranslateCommands(TranslatorService translatorService);
+    
+    // Command processing
+    public List<String> processCommands(List<String> commands, boolean log);
+}
+```
+
+### `TranslationException` Error Handling
+
+Exception for translation errors:
+
+```java
+public class TranslationException extends RuntimeException {
+    // Constructors
+    public TranslationException(String message);
+    public TranslationException(String message, Throwable cause);
+}
+```
+
+## Enabling Detailed Logging
+
+To enable detailed logging for components:
+
+```java
+// Enable detailed cache logging
+TranslationCache.DETAILED_LOGGING = true;
+
+// Enable detailed rate limiter logging
+RateLimiter.DETAILED_LOGGING = true;
+```
+
+When enabled:
+- Cache will log detailed information about hits, misses, and cleanup operations
+- Rate limiter will log detailed information about permits, throttling, and backoff behavior
+
+## Best Practices
+
+1. Always use try-with-resources for proper resource cleanup
+2. Configure appropriate timeouts for your network environment
+3. Adjust rate limiting based on the API service's limitations
+4. Use asynchronous translations for non-blocking operations
+5. Implement proper error handling for robust applications
+
+## Installation
+
+### Maven
+
+```xml
+<dependency>
+    <groupId>com.vidigal.code</groupId>
+    <artifactId>libretranslate-java</artifactId>
+    <version>1.0.0</version>
+</dependency>
+```
+
+### Gradle
+
+```groovy
+implementation 'com.vidigal.code:libretranslate-java:1.0.0'
+```
+
+## License
+
+This project is licensed under the **MIT License**.
+
+See the [LICENSE](https://github.com/Vidigal-code/libretranslate-java/blob/main/License.mit) file for more details.
+
+The LibreTranslate API is also licensed under the **MIT License**.
+See the [LibreTranslate LICENSE](https://github.com/LibreTranslate/LibreTranslate/blob/main/LICENSE) for details.
+
+## Credits
+
+- **Creator**: Kauan Vidigal
+- **Translation API**: [LibreTranslate](https://libretranslate.com/)
+- **Contributions**: Contributions are welcome! Feel free to fork the repository, open an issue, or submit a pull request.
+
+## Links
+- [LibreTranslate API Documentation](https://libretranslate.com/docs)
+- [LibreTranslate API GitHub](https://github.com/LibreTranslate/LibreTranslate)
 
