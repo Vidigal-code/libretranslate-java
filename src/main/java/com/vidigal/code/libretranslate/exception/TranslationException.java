@@ -5,7 +5,6 @@ package com.vidigal.code.libretranslate.exception;
  */
 public class TranslationException extends RuntimeException {
 
-
     /**
      * Creates a new TranslationException with the specified message.
      *
