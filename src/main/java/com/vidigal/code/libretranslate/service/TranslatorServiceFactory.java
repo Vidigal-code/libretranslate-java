@@ -1,12 +1,6 @@
 package com.vidigal.code.libretranslate.service;
 
-import com.vidigal.code.libretranslate.client.LibreTranslateClient;
 import com.vidigal.code.libretranslate.config.LibreTranslateConfig;
-import com.vidigal.code.libretranslate.exception.TranslationException;
-
-import java.io.IOException;
-import java.net.HttpURLConnection;
-import java.net.URL;
 
 /**
  * Factory interface for creating TranslatorService instances.
@@ -32,7 +26,7 @@ public interface TranslatorServiceFactory {
      * @return TranslatorService instance
      */
     TranslatorService create(LibreTranslateConfig config);
-    
+
     /**
      * Tests the connection to the specified API URL.
      *

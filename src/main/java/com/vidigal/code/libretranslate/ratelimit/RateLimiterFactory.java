@@ -40,9 +40,9 @@ public final class RateLimiterFactory {
     /**
      * Creates a fully customized rate limiter service.
      *
-     * @param requestsPerSecond      The maximum number of requests allowed per second
+     * @param requestsPerSecond       The maximum number of requests allowed per second
      * @param burstCapacityMultiplier Multiplier for burst capacity (e.g., 2.0 allows 2x bursts)
-     * @param maxWaitTimeMs          Maximum time to wait for a permit in milliseconds
+     * @param maxWaitTimeMs           Maximum time to wait for a permit in milliseconds
      * @return A newly created rate limiter service
      * @throws IllegalArgumentException if parameters are invalid
      */
@@ -69,7 +69,7 @@ public final class RateLimiterFactory {
     /**
      * Creates a high-throughput rate limiter suitable for private APIs with high limits.
      * <p>
-     * The rate limiter is configured for as many as 100 requests per second, with a burst 
+     * The rate limiter is configured for as many as 100 requests per second, with a burst
      * capacity of 3x and a maximum wait time of 10 seconds.
      *
      * @return A newly created high-throughput rate limiter service

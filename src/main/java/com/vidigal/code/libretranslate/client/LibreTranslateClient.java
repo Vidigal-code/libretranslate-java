@@ -9,14 +9,17 @@ import com.vidigal.code.libretranslate.http.HttpRequestHandler;
 import com.vidigal.code.libretranslate.http.HttpRequestService;
 import com.vidigal.code.libretranslate.http.HttpResponse;
 import com.vidigal.code.libretranslate.language.Language;
+import com.vidigal.code.libretranslate.ratelimit.RateLimitMetrics;
 import com.vidigal.code.libretranslate.ratelimit.RateLimiterFactory;
 import com.vidigal.code.libretranslate.ratelimit.RateLimiterService;
-import com.vidigal.code.libretranslate.ratelimit.RateLimitMetrics;
 import com.vidigal.code.libretranslate.service.TranslatorService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.*;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -28,12 +31,9 @@ import java.util.concurrent.atomic.AtomicLong;
  * to provide a robust translation service.
  */
 public class LibreTranslateClient implements TranslatorService {
-    private static final Logger LOGGER = LoggerFactory.getLogger(LibreTranslateClient.class);
-
-
-
     // Constants
     public static final String DEFAULT_SOURCE_LANGUAGE = Language.AUTO.getCode();
+    private static final Logger LOGGER = LoggerFactory.getLogger(LibreTranslateClient.class);
     private static final String FORMAT_TEXT = "text";
     private static final long METRICS_LOGGING_INTERVAL_MINUTES = 5;
 
@@ -67,15 +67,15 @@ public class LibreTranslateClient implements TranslatorService {
         this.config = config;
         this.requestService = new HttpRequestHandler(config);
         this.translationCache = CacheFactory.createDefault();
-        
+
         // Create a new rate limiter and associate it with the config
         this.rateLimiter = RateLimiterFactory.create(config.getMaxRequestsPerSecond());
-        
+
         // Register the rate limiter with the config so it can be accessed by other components
         try {
             // Use reflection to access the package-private setRateLimiter method
-            java.lang.reflect.Method setRateLimiterMethod = 
-                LibreTranslateConfig.class.getDeclaredMethod("setRateLimiter", RateLimiterService.class);
+            java.lang.reflect.Method setRateLimiterMethod =
+                    LibreTranslateConfig.class.getDeclaredMethod("setRateLimiter", RateLimiterService.class);
             setRateLimiterMethod.setAccessible(true);
             setRateLimiterMethod.invoke(config, rateLimiter);
         } catch (Exception e) {
@@ -92,31 +92,41 @@ public class LibreTranslateClient implements TranslatorService {
     }
 
     /**
+     * Utility method to check if a string is null or empty.
+     *
+     * @param str The string to check
+     * @return True if the string is null or empty, false otherwise
+     */
+    public static boolean isEmpty(String str) {
+        return str == null || str.trim().isEmpty();
+    }
+
+    /**
      * Sets up periodic logging of monitoring metrics and logs initial values.
      */
     private void setupMetricsLogging() {
         // Log metrics immediately for initial state
         logMonitoringMetrics();
-        
+
         // Schedule periodic metrics logging
         schedulerService.scheduleAtFixedRate(
-            this::logMonitoringMetrics,
-            METRICS_LOGGING_INTERVAL_MINUTES,
-            METRICS_LOGGING_INTERVAL_MINUTES,
-            TimeUnit.MINUTES
+                this::logMonitoringMetrics,
+                METRICS_LOGGING_INTERVAL_MINUTES,
+                METRICS_LOGGING_INTERVAL_MINUTES,
+                TimeUnit.MINUTES
         );
-        
+
         // Schedule periodic cache cleanup to prevent memory issues
         schedulerService.scheduleAtFixedRate(
-            () -> LOGGER.debug("Metrics scheduled update running"),
-            10, 
-            30, 
-            TimeUnit.MINUTES
+                () -> LOGGER.debug("Metrics scheduled update running"),
+                10,
+                30,
+                TimeUnit.MINUTES
         );
-        
+
         LOGGER.info("Metrics logging scheduled every {} minutes", METRICS_LOGGING_INTERVAL_MINUTES);
     }
-    
+
     /**
      * Logs the current monitoring metrics to the configured logger.
      */
@@ -129,32 +139,32 @@ public class LibreTranslateClient implements TranslatorService {
             LOGGER.info("Successful Responses: {}", successfulResponses.get());
             LOGGER.info("Error Responses: {}", errorResponses.get());
             LOGGER.info("Average Response Time: {}ms", getAverageResponseTime());
-            
+
             // Add basic rate limiter info
             LOGGER.info("Rate Limiter - Max Requests: {}/sec", config.getMaxRequestsPerSecond());
-            
+
             // Add detailed rate limiter metrics if available
             try {
                 RateLimitMetrics metrics = rateLimiter.getMetrics();
                 LOGGER.info("Rate Limiter - Current Rate: {}/sec", metrics.getCurrentRequestRate());
                 LOGGER.info("Rate Limiter - Success Rate: {}%", String.format("%.2f", metrics.getSuccessRate() * 100));
                 LOGGER.info("Rate Limiter - Available Capacity: {} tokens", metrics.getAvailableTokens());
-                
+
                 if (metrics.isInBackoffMode()) {
                     LOGGER.info("Rate Limiter - BACKOFF MODE - Remaining: {}ms", metrics.getBackoffRemainingMs());
                 }
             } catch (Exception e) {
                 LOGGER.debug("Failed to log rate limiter metrics: {}", e.getMessage());
             }
-            
+
             // Add basic cache info
             LOGGER.info("Cache Hit Ratio: {}", String.format("%.2f%%", calculateCacheHitRatio() * 100));
-            
+
             // Log language pair statistics if any
             if (!languagePairCounts.isEmpty()) {
                 logLanguageStatistics();
             }
-            
+
             // Log response code statistics if any
             if (!responseCodeCounts.isEmpty()) {
                 logResponseCodeStatistics();
@@ -163,31 +173,31 @@ public class LibreTranslateClient implements TranslatorService {
             LOGGER.error("Error while logging metrics", e);
         }
     }
-    
+
     /**
      * Logs statistics about language pairs used in translations
      */
     private void logLanguageStatistics() {
         LOGGER.info("=== Language Pair Statistics ===");
         languagePairCounts.entrySet().stream()
-            .sorted((e1, e2) -> e2.getValue().get() - e1.getValue().get())
-            .limit(5)
-            .forEach(e -> LOGGER.info("  {} → {} translations", e.getKey(), e.getValue().get()));
+                .sorted((e1, e2) -> e2.getValue().get() - e1.getValue().get())
+                .limit(5)
+                .forEach(e -> LOGGER.info("  {} → {} translations", e.getKey(), e.getValue().get()));
     }
-    
+
     /**
      * Logs statistics about HTTP response codes
      */
     private void logResponseCodeStatistics() {
         LOGGER.info("=== Response Code Statistics ===");
         responseCodeCounts.entrySet().stream()
-            .sorted(Map.Entry.comparingByKey())
-            .forEach(e -> LOGGER.info("  HTTP {}: {} responses", e.getKey(), e.getValue().get()));
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(e -> LOGGER.info("  HTTP {}: {} responses", e.getKey(), e.getValue().get()));
     }
 
     /**
      * Calculates the cache hit ratio from available metrics.
-     * 
+     *
      * @return The ratio of cache hits to total cache accesses (0.0-1.0)
      */
     private double calculateCacheHitRatio() {
@@ -227,8 +237,8 @@ public class LibreTranslateClient implements TranslatorService {
         // Found in cache, log and return
         if (translatedTextOpt.isPresent()) {
             if (TranslationCache.DETAILED_LOGGING && apiCalls.get() % 10 == 0) {
-                LOGGER.debug("Cache hit for: [{}→{}] text length: {}", 
-                    sourceLanguage, targetLanguage, text.length());
+                LOGGER.debug("Cache hit for: [{}→{}] text length: {}",
+                        sourceLanguage, targetLanguage, text.length());
             }
             return translatedTextOpt.get();
         }
@@ -236,7 +246,6 @@ public class LibreTranslateClient implements TranslatorService {
         // Not in cache, perform translation
         return performTranslation(text, sourceLanguage, targetLanguage, cacheKey);
     }
-
 
     /**
      * Performs the actual translation operation by calling the API.
@@ -253,8 +262,8 @@ public class LibreTranslateClient implements TranslatorService {
             // Track language pair statistics
             String langPair = sourceLanguage + "→" + targetLanguage;
             languagePairCounts.computeIfAbsent(langPair, k -> new AtomicInteger(0))
-                .incrementAndGet();
-            
+                    .incrementAndGet();
+
             // Use rate limiter to enforce API rate limits
             boolean acquired = false;
             try {
@@ -272,7 +281,7 @@ public class LibreTranslateClient implements TranslatorService {
                 Thread.currentThread().interrupt();
                 throw new TranslationException("Translation interrupted while waiting for rate limit", e);
             }
-            
+
             Map<String, String> params = createTranslationParams(text, sourceLanguage, targetLanguage);
 
             long startTime = System.currentTimeMillis();
@@ -284,7 +293,7 @@ public class LibreTranslateClient implements TranslatorService {
             // Handle rate limiting if needed
             if (response.isRateLimited()) {
                 requestService.handleRateLimitExceeded(response);
-                
+
                 // Retry the request after rate limit handling
                 response = requestService.sendHttpRequest(config.getApiUrl(), "POST", params);
                 updateMetrics(response, System.currentTimeMillis() - startTime);
@@ -299,7 +308,6 @@ public class LibreTranslateClient implements TranslatorService {
         }
     }
 
-
     /**
      * Updates metrics based on the API response.
      *
@@ -309,12 +317,12 @@ public class LibreTranslateClient implements TranslatorService {
     private void updateMetrics(HttpResponse response, long responseTime) {
         apiCalls.incrementAndGet();
         totalResponseTime.addAndGet(responseTime);
-        
+
         // Track response code statistics
         int statusCode = response.getStatusCode();
         responseCodeCounts.computeIfAbsent(statusCode, k -> new AtomicInteger(0))
-            .incrementAndGet();
-        
+                .incrementAndGet();
+
         if (response.isSuccessful()) {
             successfulResponses.incrementAndGet();
         } else {
@@ -343,7 +351,6 @@ public class LibreTranslateClient implements TranslatorService {
 
         return params;
     }
-
 
     /**
      * Validates the input parameters for translation.
@@ -403,7 +410,6 @@ public class LibreTranslateClient implements TranslatorService {
         }, executorService);
     }
 
-
     /**
      * Processes a list of translation commands and returns the results.
      *
@@ -426,29 +432,18 @@ public class LibreTranslateClient implements TranslatorService {
         return config.getApiKey() != null && !config.getApiKey().isEmpty();
     }
 
-    /**
-     * Utility method to check if a string is null or empty.
-     *
-     * @param str The string to check
-     * @return True if the string is null or empty, false otherwise
-     */
-    public static boolean isEmpty(String str) {
-        return str == null || str.trim().isEmpty();
-    }
-
-
     // Implement AutoCloseable
     @Override
     public void close() {
         shutdownExecutorService(executorService);
         shutdownExecutorService(schedulerService);
-        
+
         try {
             translationCache.close();
         } catch (Exception e) {
             LOGGER.warn("Error closing translation cache: {}", e.getMessage());
         }
-        
+
         try {
             rateLimiter.close();
         } catch (Exception e) {
@@ -546,14 +541,14 @@ public class LibreTranslateClient implements TranslatorService {
         successfulResponses.set(0);
         errorResponses.set(0);
         totalResponseTime.set(0);
-        
+
         translationCache.clearMetrics();
-        
+
         rateLimiter.resetMetrics();
-        
+
         languagePairCounts.clear();
         responseCodeCounts.clear();
-        
+
         LOGGER.debug("All metrics cleared");
     }
 

@@ -4,7 +4,7 @@ import com.vidigal.code.libretranslate.exception.TranslationException;
 
 /**
  * Builder for creating immutable LibreTranslateConfig instances with a fluent interface.
- *
+ * <p>
  * This class allows configuring LibreTranslate client parameters in a flexible and type-safe manner.
  * It follows the Builder design pattern to construct {@link LibreTranslateConfig} objects.
  *
@@ -41,6 +41,22 @@ public class Builder {
 
 
     /**
+     * Creates a new Builder instance initialized with an existing configuration.
+     *
+     * @param config The existing LibreTranslateConfig to copy settings from
+     */
+    public Builder(LibreTranslateConfig config) {
+        this.apiUrl = config.getApiUrl();
+        this.apiKey = config.getApiKey();
+        this.connectionTimeout = config.getConnectionTimeout();
+        this.socketTimeout = config.getSocketTimeout();
+        this.maxRetries = config.getMaxRetries();
+        this.rateLimitCooldown = config.getRateLimitCooldown();
+        this.maxRequestsPerSecond = config.getMaxRequestsPerSecond();
+        this.enableRetry = config.isRetryEnabled();
+    }
+
+    /**
      * Gets
      */
     public String getApiUrl() {
@@ -73,22 +89,6 @@ public class Builder {
 
     public boolean isEnableRetry() {
         return enableRetry;
-    }
-
-    /**
-     * Creates a new Builder instance initialized with an existing configuration.
-     *
-     * @param config The existing LibreTranslateConfig to copy settings from
-     */
-    public Builder(LibreTranslateConfig config) {
-        this.apiUrl = config.getApiUrl();
-        this.apiKey = config.getApiKey();
-        this.connectionTimeout = config.getConnectionTimeout();
-        this.socketTimeout = config.getSocketTimeout();
-        this.maxRetries = config.getMaxRetries();
-        this.rateLimitCooldown = config.getRateLimitCooldown();
-        this.maxRequestsPerSecond = config.getMaxRequestsPerSecond();
-        this.enableRetry = config.isRetryEnabled();
     }
 
     /**
