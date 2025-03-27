@@ -122,8 +122,7 @@ System.out.println("Cache Hits: " + translator.getCacheHits());
 System.out.println("Cache Misses: " + translator.getCacheMisses());
 
 // Calculate cache hit ratio
-double hitRatio = (double) translator.getCacheHits() / 
-                 (translator.getCacheHits() + translator.getCacheMisses());
+double hitRatio = (double) translator.getCacheHits() / (translator.getCacheHits() + translator.getCacheMisses());
 System.out.printf("Cache Hit Ratio: %.2f%%\n", hitRatio * 100);
 ```
 
