@@ -31,21 +31,18 @@ public class RateLimiter implements RateLimiterService {
     private final int baseRequestRate;
     private final double burstCapacityMultiplier;
     private final long maxWaitTimeNanos;
-    private volatile int currentMaxRequestRate;
-
-    // Token bucket state
-    private volatile double tokensAvailable;
-    private volatile long lastRefillTimestampNanos;
-    private volatile long nanosPerToken;
-
     // Thread synchronization
     private final ReentrantReadWriteLock lock;
-
     // Metrics
     private final AtomicLong totalRequests;
     private final AtomicLong permittedRequests;
     private final AtomicLong throttledRequests;
     private final AtomicLong totalWaitTimeNanos;
+    private volatile int currentMaxRequestRate;
+    // Token bucket state
+    private volatile double tokensAvailable;
+    private volatile long lastRefillTimestampNanos;
+    private volatile long nanosPerToken;
     private volatile long lastThrottleTimestampMillis;
     private volatile long backoffExpirationTimestampMillis;
     private volatile boolean inBackoffMode;

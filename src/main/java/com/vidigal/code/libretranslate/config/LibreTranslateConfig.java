@@ -5,7 +5,7 @@ import com.vidigal.code.libretranslate.ratelimit.RateLimiterService;
 
 /**
  * Immutable configuration class for the LibreTranslate client.
- *
+ * <p>
  * This class encapsulates all configuration settings for interacting with
  * the LibreTranslate API. It uses the Builder pattern to ensure type-safe
  * and flexible configuration creation.
@@ -43,7 +43,7 @@ public class LibreTranslateConfig {
     private final int rateLimitCooldown;
     private final int maxRequestsPerSecond;
     private final boolean enableRetry;
-    
+
     // Reference to rate limiter instance
     private volatile RateLimiterService rateLimiter;
 
@@ -138,17 +138,17 @@ public class LibreTranslateConfig {
 
     /**
      * Gets the rate limiter associated with this configuration.
-     * 
+     *
      * @return The rate limiter instance, or null if not set
      */
     public RateLimiterService getRateLimiter() {
         return rateLimiter;
     }
-    
+
     /**
      * Sets the rate limiter for this configuration.
      * This method is package-private and intended to be called only by the LibreTranslateClient.
-     * 
+     *
      * @param rateLimiter The rate limiter to associate with this configuration
      */
     void setRateLimiter(RateLimiterService rateLimiter) {

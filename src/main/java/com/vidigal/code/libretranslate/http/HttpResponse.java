@@ -17,9 +17,9 @@ public final class HttpResponse {
     /**
      * Creates a new HttpResponse with the given status code, headers, body, and response time.
      *
-     * @param statusCode    The HTTP status code
-     * @param headers       The HTTP response headers
-     * @param body          The response body
+     * @param statusCode     The HTTP status code
+     * @param headers        The HTTP response headers
+     * @param body           The response body
      * @param responseTimeMs The response time in milliseconds
      */
     public HttpResponse(int statusCode, Map<String, String> headers, String body, long responseTimeMs) {
@@ -57,7 +57,7 @@ public final class HttpResponse {
         if (name == null) {
             return null;
         }
-        
+
         // Headers are often case-insensitive, so do a case-insensitive search
         for (Map.Entry<String, String> entry : headers.entrySet()) {
             if (entry.getKey().equalsIgnoreCase(name)) {

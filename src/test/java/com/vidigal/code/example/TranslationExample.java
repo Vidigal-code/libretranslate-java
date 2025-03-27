@@ -1,9 +1,7 @@
 package com.vidigal.code.example;
 
-import com.vidigal.code.libretranslate.client.LibreTranslateClient;
 import com.vidigal.code.libretranslate.service.TranslatorService;
 import com.vidigal.code.libretranslate.service.Translators;
-import com.vidigal.code.libretranslate.config.LibreTranslateConfig;
 
 import java.util.Arrays;
 import java.util.List;

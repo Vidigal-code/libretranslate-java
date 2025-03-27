@@ -1,16 +1,14 @@
 package com.vidigal.code.libretranslate.util;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.Collections;
 import java.util.Map;
-
-import com.vidigal.code.libretranslate.exception.TranslationException;
 
 /**
  * Utility class providing JSON parsing and serialization operations with enhanced validation.
@@ -86,7 +84,7 @@ public class JsonUtil {
     /**
      * Validates that a JSON string contains all required fields and that their types match expectations.
      *
-     * @param json    The JSON string to validate.
+     * @param json           The JSON string to validate.
      * @param requiredFields A map of required field names and their expected types (e.g., "field1": "String").
      * @return true if the JSON passes validation, false otherwise.
      */
