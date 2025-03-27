@@ -22,14 +22,14 @@ public class RateLimitMetrics {
     /**
      * Creates a new metrics snapshot for a rate limiter.
      *
-     * @param baseRequestRate The configured base request rate per second
+     * @param baseRequestRate    The configured base request rate per second
      * @param currentRequestRate The current active request rate per second
-     * @param availableTokens The number of available tokens in the bucket
-     * @param totalRequests Total number of requests attempted
-     * @param permittedRequests Number of requests permitted
-     * @param throttledRequests Number of requests throttled
-     * @param totalWaitTimeMs Total time spent waiting for permits in milliseconds
-     * @param inBackoffMode Whether the rate limiter is currently in backoff mode
+     * @param availableTokens    The number of available tokens in the bucket
+     * @param totalRequests      Total number of requests attempted
+     * @param permittedRequests  Number of requests permitted
+     * @param throttledRequests  Number of requests throttled
+     * @param totalWaitTimeMs    Total time spent waiting for permits in milliseconds
+     * @param inBackoffMode      Whether the rate limiter is currently in backoff mode
      * @param backoffRemainingMs Time remaining in current backoff in milliseconds
      */
     public RateLimitMetrics(
