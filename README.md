@@ -24,7 +24,6 @@ com.vidigal.code.libretranslate
 ├── http            - HTTP request handling
 ├── language        - Language code utilities
 ├── ratelimit       - Rate limiting implementation
-├── response        - Response processing utilities
 ├── service         - Service interfaces and factories
 └── util            - Common utility classes
 ```
