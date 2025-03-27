@@ -13,7 +13,7 @@ import java.util.stream.Collectors;
 
 /**
  * Handles command processing for translations with multiple parsing and execution modes.
- *
+ * <p>
  * This class provides flexible translation command processing with support for:
  * - Different operation modes (synchronous, asynchronous)
  * - Multiple language configurations

@@ -23,7 +23,7 @@ public interface HttpRequestService {
      * @throws TranslationException if the request fails
      */
     HttpResponse sendHttpRequest(String url, String method, Map<String, String> params) throws TranslationException;
-    
+
     /**
      * Extracts translated text from an API response.
      *

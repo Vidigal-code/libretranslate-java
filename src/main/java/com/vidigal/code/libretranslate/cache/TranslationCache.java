@@ -22,17 +22,14 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class TranslationCache implements TranslationCacheService {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(TranslationCache.class);
+    private static final int DEFAULT_MAX_CACHE_SIZE = 1000;
+    private static final long DEFAULT_CACHE_EXPIRATION_MS = 5 * 60 * 1000; // 5 minutes
+    private static final long DEFAULT_CLEANUP_INTERVAL_MS = 60 * 1000; // 1 minute
     /**
      * Flag to enable/disable detailed logging
      */
     public static boolean DETAILED_LOGGING = false;
-
-    private static final Logger LOGGER = LoggerFactory.getLogger(TranslationCache.class);
-    
-    private static final int DEFAULT_MAX_CACHE_SIZE = 1000;
-    private static final long DEFAULT_CACHE_EXPIRATION_MS = 5 * 60 * 1000; // 5 minutes
-    private static final long DEFAULT_CLEANUP_INTERVAL_MS = 60 * 1000; // 1 minute
-
     private final Map<String, CacheEntry> cache;
     private final int maxCacheSize;
     private final long cacheExpirationMs;
@@ -61,7 +58,7 @@ public class TranslationCache implements TranslationCacheService {
     public TranslationCache(int maxCacheSize, long cacheExpirationMs) {
         this(maxCacheSize, cacheExpirationMs, DEFAULT_CLEANUP_INTERVAL_MS);
     }
-    
+
     /**
      * Constructs a new TranslationCache with fully customized settings.
      *
@@ -71,17 +68,17 @@ public class TranslationCache implements TranslationCacheService {
      */
     public TranslationCache(int maxCacheSize, long cacheExpirationMs, long cleanupIntervalMs) {
         validateParameters(maxCacheSize, cacheExpirationMs, cleanupIntervalMs);
-        
+
         this.maxCacheSize = maxCacheSize;
         this.cacheExpirationMs = cacheExpirationMs;
         this.cleanupIntervalMs = cleanupIntervalMs;
         this.cache = new ConcurrentHashMap<>(maxCacheSize);
         this.cleanupService = initializeCleanupService();
-        
-        LOGGER.debug("Initialized translation cache: maxSize={}, expirationTime={}ms, cleanupInterval={}ms", 
+
+        LOGGER.debug("Initialized translation cache: maxSize={}, expirationTime={}ms, cleanupInterval={}ms",
                 maxCacheSize, cacheExpirationMs, cleanupIntervalMs);
     }
-    
+
     /**
      * Validates constructor parameters.
      */
@@ -158,11 +155,11 @@ public class TranslationCache implements TranslationCacheService {
         if (translatedText == null) {
             return; // Don't cache null values
         }
-        
+
         if (cache.size() >= maxCacheSize) {
             removeOldestEntry();
         }
-        
+
         cache.put(cacheKey, new CacheEntry(translatedText));
     }
 
@@ -182,7 +179,7 @@ public class TranslationCache implements TranslationCacheService {
 
         if (oldestKey != null) {
             CacheEntry removed = cache.remove(oldestKey);
-            LOGGER.trace("Removed oldest cache entry: key={}, age={}ms", 
+            LOGGER.trace("Removed oldest cache entry: key={}, age={}ms",
                     oldestKey, System.currentTimeMillis() - removed.getTimestamp());
         }
     }
@@ -194,12 +191,12 @@ public class TranslationCache implements TranslationCacheService {
         try {
             long now = System.currentTimeMillis();
             int initialSize = cache.size();
-            
+
             cache.entrySet().removeIf(entry -> {
                 boolean expired = (now - entry.getValue().getTimestamp()) > cacheExpirationMs;
                 return expired;
             });
-            
+
             int removedCount = initialSize - cache.size();
             if (removedCount > 0) {
                 LOGGER.debug("Cleaned up {} expired cache entries", removedCount);

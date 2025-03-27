@@ -18,7 +18,6 @@ public class RateLimitConfig {
     }
 
 
-
     public int getCurrentRequestCount() {
         return currentRequestCount;
     }

@@ -51,14 +51,14 @@ public class HttpRequestHandler implements HttpRequestService {
     public HttpResponse sendHttpRequest(String url, String method, Map<String, String> params) throws TranslationException {
         HttpURLConnection connection = null;
         long startTime = System.currentTimeMillis();
-        
+
         try {
             connection = setupConnection(url, method);
-            
+
             if ("POST".equals(method) && params != null && !params.isEmpty()) {
                 writeRequestBody(connection, params);
             }
-            
+
             return readResponse(connection, startTime);
         } catch (IOException e) {
             throw new TranslationException("Failed to send HTTP request: " + e.getMessage(), e);
@@ -83,12 +83,12 @@ public class HttpRequestHandler implements HttpRequestService {
         connection.setDoOutput("POST".equals(method));
         connection.setConnectTimeout(config.getConnectionTimeout());
         connection.setReadTimeout(config.getSocketTimeout());
-        
+
         // Set common headers
         connection.setRequestProperty("Content-Type", DEFAULT_CONTENT_TYPE);
         connection.setRequestProperty("Accept", "application/json");
         connection.setRequestProperty("User-Agent", "LibreTranslateJava/1.0");
-        
+
         return connection;
     }
 
@@ -101,7 +101,7 @@ public class HttpRequestHandler implements HttpRequestService {
      */
     private void writeRequestBody(HttpURLConnection connection, Map<String, String> params) throws IOException {
         String formData = encodeFormData(params);
-        
+
         try (OutputStream os = connection.getOutputStream()) {
             byte[] input = formData.getBytes(StandardCharsets.UTF_8);
             os.write(input, 0, input.length);
@@ -118,19 +118,19 @@ public class HttpRequestHandler implements HttpRequestService {
     private String encodeFormData(Map<String, String> params) throws IOException {
         StringBuilder result = new StringBuilder();
         boolean first = true;
-        
+
         for (Map.Entry<String, String> entry : params.entrySet()) {
             if (first) {
                 first = false;
             } else {
                 result.append("&");
             }
-            
+
             result.append(URLEncoder.encode(entry.getKey(), StandardCharsets.UTF_8));
             result.append("=");
             result.append(URLEncoder.encode(entry.getValue(), StandardCharsets.UTF_8));
         }
-        
+
         return result.toString();
     }
 
@@ -147,7 +147,7 @@ public class HttpRequestHandler implements HttpRequestService {
         Map<String, String> headers = extractHeaders(connection);
         String responseBody = readResponseBody(connection, responseCode);
         long responseTime = System.currentTimeMillis() - startTime;
-        
+
         return new HttpResponse(responseCode, headers, responseBody, responseTime);
     }
 
@@ -159,27 +159,27 @@ public class HttpRequestHandler implements HttpRequestService {
      */
     private Map<String, String> extractHeaders(HttpURLConnection connection) {
         Map<String, String> headers = new HashMap<>();
-        
+
         for (int i = 0; ; i++) {
             String headerName = connection.getHeaderFieldKey(i);
             String headerValue = connection.getHeaderField(i);
-            
+
             if (headerName == null && headerValue == null) {
                 break;
             }
-            
+
             if (headerName != null) {
                 headers.put(headerName, headerValue);
             }
         }
-        
+
         return headers;
     }
 
     /**
      * Reads the response body from the connection.
      *
-     * @param connection  The connection to read from
+     * @param connection   The connection to read from
      * @param responseCode The HTTP response code
      * @return The response body as a string
      * @throws IOException If an I/O error occurs
@@ -187,18 +187,18 @@ public class HttpRequestHandler implements HttpRequestService {
     private String readResponseBody(HttpURLConnection connection, int responseCode) throws IOException {
         try (BufferedReader reader = new BufferedReader(
                 new InputStreamReader(
-                        responseCode >= 400 
-                            ? connection.getErrorStream() 
-                            : connection.getInputStream(), 
+                        responseCode >= 400
+                                ? connection.getErrorStream()
+                                : connection.getInputStream(),
                         StandardCharsets.UTF_8)
         )) {
             StringBuilder response = new StringBuilder();
             String line;
-            
+
             while ((line = reader.readLine()) != null) {
                 response.append(line);
             }
-            
+
             return response.toString();
         }
     }
@@ -211,10 +211,10 @@ public class HttpRequestHandler implements HttpRequestService {
         if (responseBody == null || responseBody.isEmpty()) {
             throw new TranslationException(ERROR_MESSAGE_EMPTY_RESPONSE);
         }
-        
+
         try {
             Map<String, Object> responseMap = JsonUtil.parseJson(responseBody);
-            
+
             if (responseMap.containsKey("translatedText")) {
                 return (String) responseMap.get("translatedText");
             } else if (responseMap.containsKey("error")) {
@@ -235,13 +235,13 @@ public class HttpRequestHandler implements HttpRequestService {
         if (!response.isRateLimited()) {
             return false;
         }
-        
+
         LOGGER.warn("Rate limit exceeded (HTTP 429), handling backoff");
-        
+
         // Get retry-after header or use default
         String retryAfterHeader = response.getHeader(RETRY_AFTER_HEADER);
         int retryAfterSeconds = DEFAULT_RETRY_AFTER_SECONDS;
-        
+
         if (retryAfterHeader != null && !retryAfterHeader.isEmpty()) {
             try {
                 retryAfterSeconds = Integer.parseInt(retryAfterHeader);
@@ -250,7 +250,7 @@ public class HttpRequestHandler implements HttpRequestService {
                 LOGGER.warn("Invalid Retry-After header value: {}", retryAfterHeader);
             }
         }
-        
+
         // Notify rate limiter if available
         RateLimiterService rateLimiter = config.getRateLimiter();
         if (rateLimiter != null) {
@@ -266,7 +266,7 @@ public class HttpRequestHandler implements HttpRequestService {
                 throw new TranslationException("Interrupted while waiting for rate limit cooldown", e);
             }
         }
-        
+
         return true;
     }
 } 

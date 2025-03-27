@@ -32,7 +32,7 @@ public final class CacheFactory {
     /**
      * Creates a translation cache service with the specified maximum size and expiration time.
      *
-     * @param maxSize       The maximum number of entries in the cache
+     * @param maxSize      The maximum number of entries in the cache
      * @param expirationMs The expiration time for cache entries in milliseconds
      * @return A newly created translation cache service
      * @throws IllegalArgumentException if parameters are invalid
@@ -44,8 +44,8 @@ public final class CacheFactory {
     /**
      * Creates a fully customized translation cache service.
      *
-     * @param maxSize       The maximum number of entries in the cache
-     * @param expirationMs  The expiration time for cache entries in milliseconds
+     * @param maxSize           The maximum number of entries in the cache
+     * @param expirationMs      The expiration time for cache entries in milliseconds
      * @param cleanupIntervalMs The interval between cache cleanup operations
      * @return A newly created translation cache service
      * @throws IllegalArgumentException if parameters are invalid
