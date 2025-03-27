@@ -126,9 +126,9 @@ public class HttpRequestHandler implements HttpRequestService {
                 result.append("&");
             }
             
-            result.append(URLEncoder.encode(entry.getKey(), StandardCharsets.UTF_8.name()));
+            result.append(URLEncoder.encode(entry.getKey(), StandardCharsets.UTF_8));
             result.append("=");
-            result.append(URLEncoder.encode(entry.getValue(), StandardCharsets.UTF_8.name()));
+            result.append(URLEncoder.encode(entry.getValue(), StandardCharsets.UTF_8));
         }
         
         return result.toString();
