@@ -231,9 +231,9 @@ public class HttpRequestHandler implements HttpRequestService {
      * {@inheritDoc}
      */
     @Override
-    public boolean handleRateLimitExceeded(HttpResponse response) throws TranslationException {
+    public void handleRateLimitExceeded(HttpResponse response) throws TranslationException {
         if (!response.isRateLimited()) {
-            return false;
+            return;
         }
 
         LOGGER.warn("Rate limit exceeded (HTTP 429), handling backoff");
@@ -267,6 +267,5 @@ public class HttpRequestHandler implements HttpRequestService {
             }
         }
 
-        return true;
     }
 } 

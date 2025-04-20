@@ -37,8 +37,7 @@ public interface HttpRequestService {
      * Handles a rate limit exceeded response.
      *
      * @param response The HTTP response indicating the rate limit was exceeded
-     * @return True if the rate limit handling was successful
      * @throws TranslationException if handling fails or if retry is not possible
      */
-    boolean handleRateLimitExceeded(HttpResponse response) throws TranslationException;
+    void handleRateLimitExceeded(HttpResponse response) throws TranslationException;
 } 
