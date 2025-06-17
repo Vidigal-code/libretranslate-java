@@ -354,6 +354,7 @@ The library includes a comprehensive test suite under `src/test/java/com/java/vi
 | `maxRetries`            | Maximum retry attempts for transient errors            | 3                      |
 | `rateLimitCooldown`     | Rate limiter cooldown period (ms)                      | 5000                   |
 | `enableRetry`           | Enable/disable retries for transient errors            | true                   |
+| `closedThreadAuto`      | To enable auto-closure                                 | false                  |
 | `enableCache`           | Enable/disable in-memory caching                       | false                  |
 | `enablePersistentCache` | Enable/disable persistent cache storage                | false                  |
 | `persistentCachePath`   | File path for persistent cache                         | None (if enabled)      |
