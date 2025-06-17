@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.*;
@@ -50,7 +51,7 @@ public class TranslationCache {
      * @param maxCacheSize           maximum number of entries, must be positive
      * @param persistentCacheEnabled whether to enable disk persistence
      * @param persistentCachePath    file path for persistence, required if enabled
-     * @throws IllegalArgumentException if persistent cache path is invalid
+     * @throws IllegalArgumentException if parameters are invalid
      */
     public TranslationCache(long ttlMillis, int maxCacheSize, boolean persistentCacheEnabled, String persistentCachePath) {
         this(ttlMillis, maxCacheSize, persistentCacheEnabled, persistentCachePath, Clock.systemUTC());
@@ -64,19 +65,25 @@ public class TranslationCache {
      * @param persistentCacheEnabled whether to enable disk persistence
      * @param persistentCachePath    file path for persistence, required if enabled
      * @param clock                  clock for timestamp calculations
-     * @throws IllegalArgumentException if persistent cache path or clock is invalid
+     * @throws IllegalArgumentException if parameters or clock are invalid
      */
     public TranslationCache(long ttlMillis, int maxCacheSize, boolean persistentCacheEnabled, String persistentCachePath, Clock clock) {
-        if (persistentCacheEnabled && (persistentCachePath == null || persistentCachePath.trim().isEmpty())) {
-            throw new IllegalArgumentException("Persistent cache path must not be null or empty");
+        if (ttlMillis < 0) {
+            throw new IllegalArgumentException("TTL must be non-negative");
+        }
+        if (maxCacheSize <= 0) {
+            throw new IllegalArgumentException("Maximum cache size must be positive");
+        }
+        if (persistentCacheEnabled && (persistentCachePath == null || persistentCachePath.isBlank())) {
+            throw new IllegalArgumentException("Persistent cache path must not be null or blank when persistence is enabled");
         }
         this.ttlMillis = ttlMillis;
-        this.maxCacheSize = maxCacheSize > 0 ? maxCacheSize : Integer.MAX_VALUE;
+        this.maxCacheSize = maxCacheSize;
         this.persistentCacheEnabled = persistentCacheEnabled;
         this.persistentCachePath = persistentCachePath;
         this.objectMapper = new ObjectMapper();
         this.clock = Objects.requireNonNull(clock, "Clock must not be null");
-        this.cache = Collections.synchronizedMap(new LinkedHashMap<>(this.maxCacheSize, 0.75f, true) {
+        this.cache = Collections.synchronizedMap(new LinkedHashMap<>(maxCacheSize, 0.75f, true) {
             @Override
             protected boolean removeEldestEntry(Map.Entry<String, CacheEntry> eldest) {
                 return size() > maxCacheSize;
@@ -169,14 +176,17 @@ public class TranslationCache {
      * Clears the cache and shuts down the cleanup scheduler.
      */
     public void clear() {
-        synchronized (cache) {
-            cache.clear();
-        }
-        cacheHits.set(0);
-        cacheMisses.set(0);
-        shutdownCleanupScheduler();
-        if (persistentCacheEnabled) {
-            clearPersistentCache();
+        try {
+            synchronized (cache) {
+                cache.clear();
+            }
+            cacheHits.set(0);
+            cacheMisses.set(0);
+            if (persistentCacheEnabled) {
+                clearPersistentCache();
+            }
+        } finally {
+            shutdownCleanupScheduler();
         }
     }
 
@@ -254,7 +264,7 @@ public class TranslationCache {
         if (persistentCacheEnabled) {
             saveCacheToDisk();
         }
-        logger.debug("Evicted expired cache entries, size: {}", getCacheSize());
+        logger.debug("Evicted expired cache entries, current size: {}", getCacheSize());
     }
 
     /**
@@ -280,20 +290,24 @@ public class TranslationCache {
      * Loads the persistent cache from disk.
      */
     private void loadCacheFromDisk() {
+        if (persistentCachePath == null || persistentCachePath.isBlank()) {
+            logger.warn("Persistent cache path is null or blank, skipping load");
+            return;
+        }
         File cacheFile = new File(persistentCachePath);
         if (!cacheFile.exists()) {
             logger.debug("No persistent cache file at {}", persistentCachePath);
             return;
         }
         try {
-            TypeReference<Map<String, CacheEntry>> typeRef = new TypeReference<>() {
-            };
+            TypeReference<Map<String, CacheEntry>> typeRef = new TypeReference<>() {};
             Map<String, CacheEntry> loadedCache = objectMapper.readValue(cacheFile, typeRef);
             synchronized (cache) {
                 cache.putAll(loadedCache);
             }
+            logger.info("Loaded {} entries from persistent cache at {}", loadedCache.size(), persistentCachePath);
         } catch (IOException e) {
-            logger.error("Failed to load persistent cache: {}", e.getMessage(), e);
+            logger.error("Failed to load persistent cache from {}: {}", persistentCachePath, e.getMessage(), e);
         }
     }
 
@@ -301,6 +315,10 @@ public class TranslationCache {
      * Saves the cache to disk.
      */
     private void saveCacheToDisk() {
+        if (persistentCachePath == null || persistentCachePath.isBlank()) {
+            logger.warn("Persistent cache path is null or blank, skipping save");
+            return;
+        }
         File cacheFile = new File(persistentCachePath);
         try {
             File parentDir = cacheFile.getParentFile();
@@ -310,8 +328,9 @@ public class TranslationCache {
             synchronized (cache) {
                 objectMapper.writeValue(cacheFile, cache);
             }
+            logger.debug("Saved cache to {}", persistentCachePath);
         } catch (IOException e) {
-            logger.error("Failed to save persistent cache: {}", e.getMessage(), e);
+            logger.error("Failed to save persistent cache to {}: {}", persistentCachePath, e.getMessage(), e);
         }
     }
 
@@ -319,9 +338,18 @@ public class TranslationCache {
      * Deletes the persistent cache file.
      */
     private void clearPersistentCache() {
+        if (persistentCachePath == null || persistentCachePath.isBlank()) {
+            logger.warn("Persistent cache path is null or blank, skipping clear");
+            return;
+        }
         File cacheFile = new File(persistentCachePath);
-        if (cacheFile.exists() && !cacheFile.delete()) {
-            logger.error("Failed to delete persistent cache file at {}", persistentCachePath);
+        if (cacheFile.exists()) {
+            try {
+                Files.delete(cacheFile.toPath());
+                logger.debug("Deleted persistent cache file at {}", persistentCachePath);
+            } catch (IOException e) {
+                logger.error("Failed to delete persistent cache file at {}: {}", persistentCachePath, e.getMessage(), e);
+            }
         }
     }
 

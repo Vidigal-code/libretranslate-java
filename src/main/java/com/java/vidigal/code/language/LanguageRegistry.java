@@ -24,6 +24,9 @@ import java.util.stream.Stream;
  * Can be initialized with default languages and updated dynamically via the LibreTranslate API.
  * <p>
  * This class supports dependency injection for better testability and flexibility.
+ * </p>
+ *
+ * @author Vidigal
  */
 public class LanguageRegistry {
 
@@ -46,8 +49,8 @@ public class LanguageRegistry {
      * Constructs a new LanguageRegistry with provided dependencies.
      * This constructor enables dependency injection for better testability.
      *
-     * @param httpClient   The HTTP client to use for API requests
-     * @param objectMapper The object mapper for JSON serialization/deserialization
+     * @param httpClient   the HTTP client to use for API requests
+     * @param objectMapper the object mapper for JSON serialization/deserialization
      */
     public LanguageRegistry(HttpClient httpClient, ObjectMapper objectMapper) {
         this.httpClient = httpClient;
@@ -56,22 +59,22 @@ public class LanguageRegistry {
     }
 
     /**
-     * Factory method to create a LanguageRegistry with custom HttpClient.
-     * Useful when you need to configure specific HTTP client settings.
+     * Factory method to create a LanguageRegistry with a custom HttpClient.
+     * Useful when specific HTTP client settings are needed.
      *
-     * @param httpClient Custom HTTP client
-     * @return New LanguageRegistry instance
+     * @param httpClient custom HTTP client
+     * @return new LanguageRegistry instance
      */
     public static LanguageRegistry withHttpClient(HttpClient httpClient) {
         return new LanguageRegistry(httpClient, new ObjectMapper());
     }
 
     /**
-     * Factory method to create a LanguageRegistry with custom ObjectMapper.
-     * Useful when you need specific JSON processing configurations.
+     * Factory method to create a LanguageRegistry with a custom ObjectMapper.
+     * Useful when specific JSON processing configurations are needed.
      *
-     * @param objectMapper Custom object mapper
-     * @return New LanguageRegistry instance
+     * @param objectMapper custom object mapper
+     * @return new LanguageRegistry instance
      */
     public static LanguageRegistry withObjectMapper(ObjectMapper objectMapper) {
         return new LanguageRegistry(HttpClient.newHttpClient(), objectMapper);
@@ -81,11 +84,17 @@ public class LanguageRegistry {
      * Asynchronously fetches supported languages from the LibreTranslate API.
      * Only fetches once unless reset.
      *
-     * @param apiUrl The LibreTranslate API base URL.
-     * @param apiKey The LibreTranslate authentication key (optional).
-     * @return A CompletableFuture indicating success (true) or failure (false).
+     * @param apiUrl the LibreTranslate API base URL (e.g., "https://translate.fedilab.app")
+     * @param apiKey the LibreTranslate authentication key (optional)
+     * @return a CompletableFuture indicating success (true) or failure (false)
+     * @throws IllegalArgumentException if {@code apiUrl} is null or blank
      */
     public CompletableFuture<Boolean> fetchFromApi(String apiUrl, String apiKey) {
+        if (apiUrl == null || apiUrl.isBlank()) {
+            logger.error("API URL cannot be null or blank");
+            throw new IllegalArgumentException("API URL cannot be null or blank");
+        }
+
         if (hasFetchedFromApi.getAndSet(true)) {
             logger.debug("Languages already fetched from API, skipping");
             return CompletableFuture.completedFuture(true);
@@ -119,6 +128,7 @@ public class LanguageRegistry {
 
                     supportedLanguages.addAll(apiLanguages);
                     logger.info("Successfully fetched {} languages from API", apiLanguages.size());
+
                     return true;
                 } else {
                     logger.error("Failed to fetch languages, status: {}, body: {}",
@@ -126,8 +136,13 @@ public class LanguageRegistry {
                     hasFetchedFromApi.set(false);
                     return false;
                 }
+            } catch (InterruptedException e) {
+                logger.error("Interrupted while fetching languages from API", e);
+                Thread.currentThread().interrupt();
+                hasFetchedFromApi.set(false);
+                return false;
             } catch (Exception e) {
-                logger.error("Exception fetching languages from API", e);
+                logger.error("Exception while fetching languages from API", e);
                 hasFetchedFromApi.set(false);
                 return false;
             }
@@ -137,8 +152,8 @@ public class LanguageRegistry {
     /**
      * Checks if a language code is supported (case-insensitive).
      *
-     * @param code The language code (e.g., "EN", "fr").
-     * @return True if supported, false otherwise.
+     * @param code the language code (e.g., "EN", "fr")
+     * @return true if supported, false otherwise
      */
     public boolean isSupported(String code) {
         if (code == null || code.isBlank()) {
@@ -150,7 +165,7 @@ public class LanguageRegistry {
     /**
      * Adds a custom language code to the supported set.
      *
-     * @param code The language code to add.
+     * @param code the language code to add
      */
     public void addLanguage(String code) {
         if (code != null && !code.isBlank()) {
@@ -160,9 +175,9 @@ public class LanguageRegistry {
     }
 
     /**
-     * Removes a language code from the supported set.
+     * Removes a language code from from the supported set.
      *
-     * @param code The language code to remove.
+     * @param code the language code to remove
      */
     public void removeLanguage(String code) {
         if (code != null && !code.isBlank()) {
@@ -187,7 +202,7 @@ public class LanguageRegistry {
     /**
      * Returns an unmodifiable view of supported language codes.
      *
-     * @return Unmodifiable set of language codes.
+     * @return unmodifiable set of language codes
      */
     public Set<String> getAllSupportedLanguages() {
         return Collections.unmodifiableSet(supportedLanguages);
@@ -196,7 +211,7 @@ public class LanguageRegistry {
     /**
      * Returns the number of currently supported languages.
      *
-     * @return The count of supported languages
+     * @return the count of supported languages
      */
     public int getSupportedLanguageCount() {
         return supportedLanguages.size();
@@ -205,18 +220,21 @@ public class LanguageRegistry {
     /**
      * Checks if the registry has fetched languages from the API.
      *
-     * @return True if API fetch has been attempted, false otherwise
+     * @return true if API fetch has been attempted, false otherwise
      */
     public boolean hasFetchedFromApi() {
         return hasFetchedFromApi.get();
     }
 
     /**
-     * Resets the API fetch flag, allowing a new fetch to be performed.
+     * Resets the API fetch flag to, allowing a new fetch to be performed.
      * This method is primarily intended for testing purposes.
      */
     public void resetApiFetchFlag() {
         hasFetchedFromApi.set(false);
-        logger.debug("API fetch flag reset");
+        logger.debug("Reset API fetch flag reset");
     }
+
 }
+
+
